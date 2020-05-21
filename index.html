@@ -118,20 +118,45 @@ import glslangModule from 'https://unpkg.com/@webgpu/glslang@0.0.8/dist/web-deve
 
 const fileInput = document.querySelector('input[type="file"]');
 const btn = document.getElementById('btn');
-const reader = new FileReader();
 
-btn.addEventListener("click", read);
+async function main() {
 
-function read(callback) {
-  var file = fileInput.files.item(0);
-  reader.readAsText(file);
+const spv = `#version 450
+layout(local_size_x = 1) in;
+
+layout(set = 0, binding = 0) buffer PrimeIndices {
+    uint[] indices;
+} inp; // this is used as both input and output for convenience
+
+layout(set = 0, binding = 1) buffer ResIndices {
+    uint[] indices_o;
+} res; // this is used as both input and output for convenience
+
+// The Collatz Conjecture states that for any integer n:
+// If n is even, n = n/2
+// If n is odd, n = 3n+1
+// And repeat this process for each new n, you will always eventually reach 1.
+// Though the conjecture has not been proven, no counterexample has ever been found.
+// This function returns how many times this recurrence needs to be applied to reach 1.
+uint collatz_iterations(uint n) {
+    uint i = 0;
+    while(n != 1) {
+        if (mod(n, 2) == 0) {
+            n = n / 2;
+        }
+        else {
+            n = (3 * n) + 1;
+        }
+        i++;
+    }
+    return i;
 }
 
-reader.onload = function() {
-   main(reader.result);
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    res.indices_o[index] = collatz_iterations(inp.indices[index]);
 }
-
-async function main(spirv) {
+`
 
 const adapter = await navigator.gpu.requestAdapter();
 const device = await adapter.requestDevice();
@@ -192,7 +217,7 @@ const computePipeline = device.createComputePipeline({
     }),
     computeStage: {
         module: device.createShaderModule({
-            code: glslang.compileGLSL(spirv, "compute")
+            code: glslang.compileGLSL(spv, "compute")
         }),
         entryPoint: "main"
     }
@@ -228,6 +253,8 @@ const res = await gpuReadBuffer.mapReadAsync();
 console.log(new Uint8Array(res));
 
 };
+
+btn.addEventListener("click", main());
 
 </script>
 </html>
