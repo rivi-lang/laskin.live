@@ -212,5 +212,42 @@ btn.addEventListener("click", async () => {
     console.log("Done!");
 });
 </script>
+<script>
+var text = '1 + 5';
+
+const addition = (c) => c === "+";
+const hasAddition = [...text].some(addition);
+//if (!hasPlus) { return }
+
+let vals = [];
+let rhs = [];
+for (var name of text.split(" ")) {
+	switch (name) {
+  case "+":
+  	vals.push(rhs)
+    rhs = []
+    break
+  default:
+  	const f = parseFloat(name)
+    if (!isNaN(f)) { rhs.push(f) }
+  }
+}
+vals.push(rhs)
+
+// should return if not dyadic for now
+// if (vals.length < 2) { }
+
+const sameLen = vals[0].length == vals[1].length;
+if (!sameLen) {
+	const scalarEither = vals[0].length == 1 || vals[1].length == 1;
+  // if length is not the same, and neither is scalar, then return
+	// if (!scalarEither) { }
+
+  // otherwise should expand other, e.g.:
+  // 1 + 1 2 3 4
+  // => 1 1 1 1 + 1 2 3 4
+}
+
+console.log(vals)
 </script>
 </html>
