@@ -50,6 +50,8 @@
     </style>
 </head>
 <body>
+    <input type="file">
+    <button id="btn">Submit</button>
     <div id="layout">
         <h1>&#128169;laskin.live</h1>
         <div id="calculator">
@@ -110,5 +112,122 @@
         document.querySelector(".res").onclick = calculate;
     };
     window.onload = init();
+</script>
+<script type="module">
+import glslangModule from 'https://unpkg.com/@webgpu/glslang@0.0.8/dist/web-devel/glslang.js';
+
+const fileInput = document.querySelector('input[type="file"]');
+const btn = document.getElementById('btn');
+const reader = new FileReader();
+
+btn.addEventListener("click", read);
+
+function read(callback) {
+  var file = fileInput.files.item(0);
+  reader.readAsText(file);
+}
+
+reader.onload = function() {
+   main(reader.result);
+}
+
+async function main(spirv) {
+
+const adapter = await navigator.gpu.requestAdapter();
+const device = await adapter.requestDevice();
+
+const computeUniformData = new Uint8Array([1, 2, 3, 4]);
+
+const [gpuBuffer, arrayBuffer] = device.createBufferMapped({
+    size: computeUniformData.byteLength,
+    usage: GPUBufferUsage.STORAGE,
+});
+new Uint8Array(arrayBuffer).set(computeUniformData);
+gpuBuffer.unmap();
+
+
+// Get a GPU buffer for reading in an unmapped state.
+const gpuResBuffer = device.createBuffer({
+  size: computeUniformData.byteLength,
+  usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+});
+
+const bindGroupLayout = device.createBindGroupLayout({
+    entries: [
+    {
+        binding: 0,
+        visibility: GPUShaderStage.COMPUTE,
+        type: "storage-buffer"
+    },
+    {
+        binding: 1,
+        visibility: GPUShaderStage.COMPUTE,
+        type: "storage-buffer"
+    }
+    ],
+});
+
+const bindGroup = device.createBindGroup({
+    layout: bindGroupLayout,
+    entries: [
+    {
+        binding: 0,
+        resource: {
+            buffer: gpuBuffer,
+        }
+    },
+    {
+        binding: 1,
+        resource: {
+            buffer: gpuResBuffer,
+        }
+    }
+    ],
+});
+
+const glslang = await glslangModule();
+const computePipeline = device.createComputePipeline({
+    layout: device.createPipelineLayout({
+      bindGroupLayouts: [bindGroupLayout]
+    }),
+    computeStage: {
+        module: device.createShaderModule({
+            code: glslang.compileGLSL(spirv, "compute")
+        }),
+        entryPoint: "main"
+    }
+});
+
+const commandEncoder = device.createCommandEncoder();
+
+const passEncoder = commandEncoder.beginComputePass();
+passEncoder.setPipeline(computePipeline);
+passEncoder.setBindGroup(0, bindGroup);
+passEncoder.dispatch(4, 1, 1);
+passEncoder.endPass();
+
+const gpuReadBuffer = device.createBuffer({
+  size: computeUniformData.byteLength,
+  usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+});
+
+commandEncoder.copyBufferToBuffer(
+    gpuResBuffer /* source buffer */,
+    0 /* source offset */,
+    gpuReadBuffer /* destination buffer */,
+    0 /* destination offset */,
+    computeUniformData.byteLength /* size */
+);
+
+// Submit GPU commands.
+const gpuCommands = commandEncoder.finish();
+device.defaultQueue.submit([gpuCommands]);
+
+// Read buffer.
+const res = await gpuReadBuffer.mapReadAsync();
+console.log(new Uint8Array(res));
+
+};
+
 </script>
 </html>
