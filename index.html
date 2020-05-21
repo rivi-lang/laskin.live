@@ -121,17 +121,13 @@ const btn = document.getElementById('btn');
 
 async function main() {
     const spv = `#version 450
-    layout(std430, set = 0, binding = 0) readonly buffer InputBuffer {
+    layout(std430, set = 0, binding = 0) buffer InputBuffer {
         float numbers[];
     } inputBuffer; // this is used as both input and output for convenience
 
-    layout(std430, set = 0, binding = 1) buffer OutputBuffer {
-        float numbers[];
-    } outputBuffer; // this is used as both input and output for convenience
-
     void main() {
         uint index = gl_GlobalInvocationID.x;
-        outputBuffer.numbers[index] = inputBuffer.numbers[index] + 1;
+        inputBuffer.numbers[index] = inputBuffer.numbers[index] + 1;
     }
     `;
 
@@ -141,30 +137,18 @@ async function main() {
     const computeUniformData = new Float32Array([1, 2, 3, 4]);
     const [gpuBuffer, arrayBuffer] = device.createBufferMapped({
         size: computeUniformData.byteLength,
-        usage: GPUBufferUsage.STORAGE,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
     new Float32Array(arrayBuffer).set(computeUniformData);
     gpuBuffer.unmap();
-
-
-    // Get a GPU buffer for reading in an unmapped state.
-    const gpuResBuffer = device.createBuffer({
-    size: computeUniformData.byteLength,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
 
     const bindGroupLayout = device.createBindGroupLayout({
         entries: [
         {
             binding: 0,
             visibility: GPUShaderStage.COMPUTE,
-            type: "readonly-storage-buffer"
-        },
-        {
-            binding: 1,
-            visibility: GPUShaderStage.COMPUTE,
             type: "storage-buffer"
-        }
+        },
         ],
     });
 
@@ -177,12 +161,6 @@ async function main() {
                 buffer: gpuBuffer,
             }
         },
-        {
-            binding: 1,
-            resource: {
-                buffer: gpuResBuffer,
-            }
-        }
         ],
     });
 
@@ -211,7 +189,7 @@ async function main() {
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
     });
     commandEncoder.copyBufferToBuffer(
-        gpuResBuffer /* source buffer */,
+        gpuBuffer /* source buffer */,
         0 /* source offset */,
         gpuReadBuffer /* destination buffer */,
         0 /* destination offset */,
