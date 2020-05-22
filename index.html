@@ -5,25 +5,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@531&display=swap" rel="stylesheet">
     <style>
         html, body {
-            padding: 0;
-            margin: 0;
-            max-width: 100vw;
-            max-height: 100vh;
-        }
-        * {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             font-family: "Inter", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-        }
-        #layout {
-            padding: 2em;
-            display: grid;
-            justify-content: center;
-            text-align: center;
         }
         #calculator {
             border: 2px solid black;
         }
         #formula {
-            border-bottom: 2px solid black;
             width: 100%;
             outline: none;
         }
@@ -31,8 +21,8 @@
             padding: 0.5em;
             margin: 0;
             min-height: 2em;
-            text-align: left;
-            border: 1px solid black;
+            border-bottom: 1px solid black;
+            border-top: 1px solid black;
         }
         #buttons {
             display: grid;
@@ -47,78 +37,76 @@
             color: red;
             text-align: center;
         }
+        #stdout {
+            background-color: black;
+            color: white;
+            max-height: 50vh;
+            overflow-y: scroll;
+        }
     </style>
 </head>
 <body>
-    <button id="btn">Submit</button>
-    <div id="layout">
+    <div>
+        <span class="header">Pooling</span>
+        <div>you: <input id="webrtc-id"></input></div>
+        <div>a friend: <input placeholder="your friend's id here" id="webrtc-id-foreign"></input></div>
+        <div>
+            <button type="button" id="pool-create">Create & Connect</button>
+            <button type="button" id="pool-connect">Connect</button>
+        </div>
+    </div>
+    <div>
         <h1>&#128169;laskin.live</h1>
-        <div id="calculator">
+        <form method="POST" enctype="multipart/form-data" id="calculator" onsubmit="return false;">
             <div id="display">
-                <input autofocus id="formula"/>
+                <input autofocus autocomplete="off" id="formula" name="formula" minlength="3" required>
                 <h2 id="result"></h2>
             </div>
             <div id="buttons">
-                <button class="btn">7</button>
-                <button class="btn">8</button>
-                <button class="btn">9</button>
-                <button class="btn">4</button>
-                <button class="btn">5</button>
-                <button class="btn">6</button>
-                <button class="btn">1</button>
-                <button class="btn">2</button>
-                <button class="btn">3</button>
-                <button class="btn">0</button>
-                <button class="btn">+</button>
-                <button class="res">=</button>
+                <input type="button" value="7">
+                <input type="button" value="8">
+                <input type="button" value="9">
+                <input type="button" value="4">
+                <input type="button" value="5">
+                <input type="button" value="6">
+                <input type="button" value="1">
+                <input type="button" value="2">
+                <input type="button" value="3">
+                <input type="button" value="0">
+                <input type="button" value="+">
+                <input type="submit" value="=">
             </div>
-        </div>
+        </form>
     </div>
     <p id="error"></p>
+    <div id="stdout"></div>
 </body>
-<script>
-    const setError = (error) => document.getElementById("error").innerHTML = error;
-    const calculate = () => {
-        const formula = document.getElementById("formula");
-        const result = document.getElementById("result");
-        try {
-            const content = formula.value;
-            const response = eval(content);
-            if (response) {
-                result.innerHTML = response;
-                setError("");
-            } else {
-                console.log("Invalid response");
-                setError("Invalid response");
-            }
-        } catch (e) {
-            console.log("Error: ", e);
-            setError(e);
-        };
-    };
-    const push = (event) => {
-        const formula = document.getElementById("formula");
-        if (!!formula.value) {
-            const newFormula = formula.value + event.target.innerHTML;
-            formula.value = newFormula;
-        } else {
-            formula.value = event.target.innerHTML;
-        };
-    };
-    const init = () => {
-        formula.onchange = calculate;
-        document.querySelectorAll(".btn").forEach(elem => elem.onclick = push);
-        document.querySelector(".res").onclick = calculate;
-    };
-    window.onload = init();
-</script>
 <script type="module">
 import glslangModule from 'https://unpkg.com/@webgpu/glslang@0.0.8/dist/web-devel/glslang.js';
 
-const fileInput = document.querySelector('input[type="file"]');
-const btn = document.getElementById('btn');
+var peers = new Array();
 
-let kernels = {
+const setError = (error) => document.getElementById("error").innerHTML = error;
+document.getElementById("calculator").onsubmit = (e) => {
+    const content = new FormData(e.target).get("formula");
+    const result = e.target.querySelector("#result");
+    try {
+        const response = new Function('"use strict";return '+content)();
+        if (!response) {
+            setError("Invalid response");
+            return false
+        }
+        result.innerHTML = response;
+    } catch (e) { setError(e) }
+    // todo: write to webrtc
+    // peers.push(content)
+    fence(content, result);
+    return false
+};
+const push = (elem) => document.getElementById("formula").value += elem.target.value;
+document.querySelectorAll("#calculator input[type=button]").forEach(elem => elem.onclick = push);
+
+const kernels = {
 "+":
 `#version 450
 layout(std430, set = 0, binding = 0) buffer LeftBuffer {
@@ -214,21 +202,30 @@ async function run(kernel, args) {
     return new Float32Array(await deviceBuffer.mapReadAsync());
 };
 
-btn.addEventListener("click", async () => {
-    var text = '1 + 5';
-    const args = interprete(text);
-    if (args.length == 0) {
+// fence is a async call to wrap the await methods
+// it evaluates line and puts the response to container
+const fence = async (line, container) => {
+    console.log("Starting...");
+    const res = await gpuEval(line);
+    console.log("Response:", res);
+    console.log("Done!");
+    container.innerHTML = res;
+    return res
+};
+
+// gpuEval takes a text line and attempts to interprete + evaluate it
+async function gpuEval(line) {
+    const args = interprete(line);
+    if (args.length != 2) {
         console.log("Parse error");
-        return
+        // todo: return unless interpretation is okay
     }
-    console.log("Running...");
-    const res = await run(
+    console.log("Arguments:", args);
+    return await run(
         kernels["+"],
         [[1,2,3,4],[1,1,1,1]], // for now hardcoded, otherwise should be 'args'
     );
-    console.log("Response:", res);
-    console.log("Done!");
-});
+}
 
 // todo
 function interprete(text) {
@@ -236,6 +233,8 @@ function interprete(text) {
     const addition = (c) => c === "+";
     const hasAddition = [...text].some(addition);
     if (!hasAddition) { return []; }
+
+    // todo: should split first by plus
 
     let vals = [];
     let rhs = [];
@@ -264,8 +263,7 @@ function interprete(text) {
     }
 
     if (!sameLen) {
-        // todo:
-        // otherwise should expand the scalar, e.g.:
+        // todo: otherwise should expand the scalar, e.g.:
         // 1 + 1 2 3 4
         // => 1 1 1 1 + 1 2 3 4
     }
@@ -273,6 +271,76 @@ function interprete(text) {
     // vals is a matrix, where first row is lhs, second rhs args
     return vals;
 }
+
+const stdout = document.getElementById('stdout');
+
+print = data => {
+    let container = document.createElement("p")
+    let msg = document.createTextNode(data)
+    container.appendChild(msg)
+    stdout.prepend(container)
+}
+
+document.getElementById('pool-create').onclick = function(event) {
+    const friend = document.getElementById('webrtc-id-foreign')
+    let sdp = JSON.parse(atob(friend.value));
+    if (pc.iceConnectionState == "checking") {
+        pc.setRemoteDescription(sdp).catch(print)
+        return
+    }
+    pc.setRemoteDescription(sdp)
+        .then(d => pc.createOffer())
+        .then(d => pc.setLocalDescription(d))
+        .catch(print)
+}
+
+document.getElementById('pool-connect').onclick = function(event) {
+    const friend = document.getElementById('webrtc-id-foreign')
+    let sdp = JSON.parse(atob(friend.value));
+    if (pc.iceConnectionState == "checking") {
+        pc.setRemoteDescription(sdp).catch(print)
+        return
+    }
+    pc.setRemoteDescription(sdp)
+        .then(d => pc.createAnswer())
+        .then(d => pc.setLocalDescription(d))
+        .catch(print)
+}
+
+let pc = new RTCPeerConnection({iceServers: [{
+    urls: '-',
+    username: '-',
+    credential: '-',
+}]})
+let dc = pc.createDataChannel("laskin-live")
+
+dc.onmessage = e => {
+    print("peer ("+e.target.id+"@"+e.target.label+"): " + e.data)
+    // todo: decide what to do with foreign messages -- gpuEval(e.data)
+};
+dc.onerror = e => {
+    console.log(e)
+    print("dc error: " + e.data)
+};
+dc.onopen = e => print("dc open")
+dc.onclose = e => print("dc close")
+
+pc.oniceconnectionstatechange = e =>
+    print("ice: " + pc.iceConnectionState)
+
+pc.onicecandidate = event => {
+  if (!event.candidate) {
+    const me = document.getElementById('webrtc-id');
+    me.value = btoa(JSON.stringify(pc.localDescription));
+  }
+}
+
+pc.onnegotiationneeded = e =>
+    pc.createOffer()
+        .then(d => pc.setLocalDescription(d))
+        .catch(print)
+
+pc.ondatachannel = event => peers.push(event.channel)
 
 </script>
 </html>
