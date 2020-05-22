@@ -50,7 +50,6 @@
     </style>
 </head>
 <body>
-    <input type="file">
     <button id="btn">Submit</button>
     <div id="layout">
         <h1>&#128169;laskin.live</h1>
@@ -119,35 +118,62 @@ import glslangModule from 'https://unpkg.com/@webgpu/glslang@0.0.8/dist/web-deve
 const fileInput = document.querySelector('input[type="file"]');
 const btn = document.getElementById('btn');
 
-async function main() {
-    const spv = `#version 450
-    layout(std430, set = 0, binding = 0) buffer InputBuffer {
-        float numbers[];
-    } inputBuffer; // this is used as both input and output for convenience
+let kernels = {
+"+":
+`#version 450
+layout(std430, set = 0, binding = 0) buffer LeftBuffer {
+    float numbers[];
+} lhs;
 
-    void main() {
-        uint index = gl_GlobalInvocationID.x;
-        inputBuffer.numbers[index] = inputBuffer.numbers[index] + 1;
-    }
-    `;
+layout(std430, set = 0, binding = 1) buffer RightBuffer {
+    float numbers[];
+} rhs;
 
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    lhs.numbers[index] += rhs.numbers[index];
+}`
+};
+
+async function run(kernel, args) {
+
+    const glslang = await glslangModule();
     const adapter = await navigator.gpu.requestAdapter();
     const device = await adapter.requestDevice();
 
-    const computeUniformData = new Float32Array([1, 2, 3, 4]);
-    const [gpuBuffer, arrayBuffer] = device.createBufferMapped({
-        size: computeUniformData.byteLength,
+    const lhs = new Float32Array(args[0]);
+    const rhs = new Float32Array(args[1]);
+
+    const [lhsBuffer, lhsAllocation] = device.createBufferMapped({
+        size: lhs.byteLength,
         usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
     });
-    new Float32Array(arrayBuffer).set(computeUniformData);
-    gpuBuffer.unmap();
+    new Float32Array(lhsAllocation).set(lhs);
+    lhsBuffer.unmap();
+
+    const [rhsBuffer, rhsAllocation] = device.createBufferMapped({
+        size: rhs.byteLength,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+    new Float32Array(rhsAllocation).set(rhs);
+    rhsBuffer.unmap();
+
+    const deviceBuffer = device.createBuffer({
+        size: lhs.byteLength,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
 
     const bindGroupLayout = device.createBindGroupLayout({
         entries: [
         {
             binding: 0,
             visibility: GPUShaderStage.COMPUTE,
-            type: "storage-buffer"
+            type: "storage-buffer",
+        },
+        {
+            binding: 1,
+            visibility: GPUShaderStage.COMPUTE,
+            type: "storage-buffer",
         },
         ],
     });
@@ -157,97 +183,96 @@ async function main() {
         entries: [
         {
             binding: 0,
-            resource: {
-                buffer: gpuBuffer,
-            }
+            resource: { buffer: lhsBuffer },
+        },
+        {
+            binding: 1,
+            resource: { buffer: rhsBuffer },
         },
         ],
     });
 
-    const glslang = await glslangModule();
     const computePipeline = device.createComputePipeline({
-        layout: device.createPipelineLayout({
-        bindGroupLayouts: [bindGroupLayout]
-        }),
+        layout: device.createPipelineLayout({bindGroupLayouts: [bindGroupLayout]}),
         computeStage: {
             module: device.createShaderModule({
-                code: glslang.compileGLSL(spv, "compute")
+                code: glslang.compileGLSL(kernel, "compute")
             }),
-            entryPoint: "main"
+            entryPoint: "main",
         }
     });
 
-    const commandEncoder = device.createCommandEncoder();
-    const passEncoder = commandEncoder.beginComputePass();
-    passEncoder.setPipeline(computePipeline);
-    passEncoder.setBindGroup(0, bindGroup);
-    passEncoder.dispatch(computeUniformData.length, 1, 1);
-    passEncoder.endPass();
+    const commandPool = device.createCommandEncoder();
+    const commandBuffer = commandPool.beginComputePass();
+    commandBuffer.setPipeline(computePipeline);
+    commandBuffer.setBindGroup(0, bindGroup);
+    commandBuffer.dispatch(lhs.length, 1, 1);
+    commandBuffer.endPass();
+    commandPool.copyBufferToBuffer(lhsBuffer, 0, deviceBuffer, 0, lhs.byteLength);
+    device.defaultQueue.submit([commandPool.finish()]);
 
-    const gpuReadBuffer = device.createBuffer({
-    size: computeUniformData.byteLength,
-    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
-    });
-    commandEncoder.copyBufferToBuffer(
-        gpuBuffer /* source buffer */,
-        0 /* source offset */,
-        gpuReadBuffer /* destination buffer */,
-        0 /* destination offset */,
-        computeUniformData.byteLength
-    );
-
-    // Submit GPU commands.
-    const gpuCommands = commandEncoder.finish();
-    device.defaultQueue.submit([gpuCommands]);
-
-    // Read buffer.
-    const res = await gpuReadBuffer.mapReadAsync();
-console.log("Res:", new Float32Array(res));
+    return new Float32Array(await deviceBuffer.mapReadAsync());
 };
 
-
 btn.addEventListener("click", async () => {
+    var text = '1 + 5';
+    const args = interprete(text);
+    if (args.length == 0) {
+        console.log("Parse error");
+        return
+    }
     console.log("Running...");
-    await main();
+    const res = await run(
+        kernels["+"],
+        [[1,2,3,4],[1,1,1,1]], // for now hardcoded, otherwise should be 'args'
+    );
+    console.log("Response:", res);
     console.log("Done!");
 });
-</script>
-<script>
-var text = '1 + 5';
 
-const addition = (c) => c === "+";
-const hasAddition = [...text].some(addition);
-//if (!hasPlus) { return }
+// todo
+function interprete(text) {
 
-let vals = [];
-let rhs = [];
-for (var name of text.split(" ")) {
-	switch (name) {
-  case "+":
-  	vals.push(rhs)
-    rhs = []
-    break
-  default:
-  	const f = parseFloat(name)
-    if (!isNaN(f)) { rhs.push(f) }
-  }
+    const addition = (c) => c === "+";
+    const hasAddition = [...text].some(addition);
+    if (!hasAddition) { return []; }
+
+    let vals = [];
+    let rhs = [];
+    for (var char of text.split(" ")) {
+        switch (char) {
+            case "+":
+            vals.push(rhs)
+            rhs = []
+            break
+        default:
+            const f = parseFloat(char)
+            if (!isNaN(f)) { rhs.push(f) }
+        }
+    }
+    vals.push(rhs)
+
+    // should return if not dyadic for now
+    if (vals.length < 2) { return []; }
+
+    const sameLen = vals[0].length == vals[1].length;
+    const scalarEither = vals[0].length == 1 || vals[1].length == 1;
+    if (!sameLen && !scalarEither) {
+        // if length is not the same, and neither is scalar, then return
+        // i.e., shape error
+        return [];
+    }
+
+    if (!sameLen) {
+        // todo:
+        // otherwise should expand the scalar, e.g.:
+        // 1 + 1 2 3 4
+        // => 1 1 1 1 + 1 2 3 4
+    }
+
+    // vals is a matrix, where first row is lhs, second rhs args
+    return vals;
 }
-vals.push(rhs)
 
-// should return if not dyadic for now
-// if (vals.length < 2) { }
-
-const sameLen = vals[0].length == vals[1].length;
-if (!sameLen) {
-	const scalarEither = vals[0].length == 1 || vals[1].length == 1;
-  // if length is not the same, and neither is scalar, then return
-	// if (!scalarEither) { }
-
-  // otherwise should expand other, e.g.:
-  // 1 + 1 2 3 4
-  // => 1 1 1 1 + 1 2 3 4
-}
-
-console.log(vals)
 </script>
 </html>
