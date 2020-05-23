@@ -19,7 +19,6 @@
             gap: 2em;
         }
 
-        /*TODO pooling styling*/
         #pooling {
             display: grid;
             gap: 0;
@@ -434,95 +433,4 @@
     };
     window.onload = initialize;
 </script>
-
-<script type="module">
-    /* TODO salvage good stuff from first implementation
-    var peers = new Array();
-    const stdout = document.getElementById('stdout');
-
-    print = data => {
-        let container = document.createElement("p")
-        let msg = document.createTextNode(data)
-        container.appendChild(msg)
-        stdout.prepend(container)
-    }
-
-    document.getElementById('pool-create').onclick = function (event) {
-        const friend = document.getElementById('webrtc-id-foreign')
-        let sdp = JSON.parse(atob(friend.value));
-        if (pc.iceConnectionState == "checking") {
-            pc.setRemoteDescription(sdp).catch(print)
-            return
-        }
-        pc.setRemoteDescription(sdp)
-            .then(d => pc.createOffer())
-            .then(d => pc.setLocalDescription(d))
-            .catch(print)
-    }
-
-    document.getElementById('pool-connect').onclick = function (event) {
-        const friend = document.getElementById('webrtc-id-foreign')
-        let sdp = JSON.parse(atob(friend.value));
-        if (pc.iceConnectionState == "checking") {
-            pc.setRemoteDescription(sdp).catch(print)
-            return
-        }
-        pc.setRemoteDescription(sdp)
-            .then(d => pc.createAnswer())
-            .then(d => pc.setLocalDescription(d))
-            .catch(print)
-    }
-
-    let pc = new RTCPeerConnection({
-        iceServers: [{
-            urls: '',
-            username: '',
-            credential: ''
-        }]
-    })
-    let dc = pc.createDataChannel("laskin-live")
-
-    const worker = () => {
-        return false
-    }
-
-    dc.onmessage = e => {
-        print("REQ peer ("+e.target.id+"@"+e.target.label+"): " + e.data)
-
-        if (worker) {
-            gpuEval(e.data).then(v => {
-                print("RES peer ("+e.target.id+"@"+e.target.label+"): " + v)
-                for (let p of peers) {
-                    p.send(v)
-                }
-            })
-        }
-    };
-    dc.onerror = e => {
-        console.log(e)
-        print("dc error: " + e.data)
-    };
-    dc.onopen = e => print("dc open")
-    dc.onclose = e => print("dc close")
-
-    pc.oniceconnectionstatechange = e =>
-        print("ice: " + pc.iceConnectionState)
-
-    pc.onicecandidate = event => {
-        if (!event.candidate) {
-            const me = document.getElementById('webrtc-id');
-            me.value = btoa(JSON.stringify(pc.localDescription));
-        }
-    }
-
-
-    pc.onnegotiationneeded = e =>
-        pc.createOffer()
-            .then(d => pc.setLocalDescription(d))
-            .catch(print)
-
-    pc.ondatachannel = event => peers.push(event.channel)
-    */
-</script>
-
 </html>
