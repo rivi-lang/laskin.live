@@ -101,7 +101,6 @@
                 <label for="webrtc-id-foreign">Their ID:</label>
                 <input class="limited" placeholder="your friend's id here" id="webrtc-id-foreign"></input>
                 <button type="button" id="join">Join</button>
-                <button type="button" id="peers" onclick="asd">Peers</button>
             </div>
         </div>
         <div id="form">
@@ -159,7 +158,6 @@
         setResult(e.data);
     };
     const showOwnID = (ID) => {
-        console.log("show own", ID);
         document.getElementById("webrtc-id").value = ID;
     }
     const showState = () => {
@@ -167,9 +165,9 @@
         console.log("signalingState", connection.signalingState);
         console.log("connectionState", connection.connectionState);
         console.log("------------------------");
+        document.getElementById("status").innerHTML = connection.connectionState;
     };
     const initializeConnection = async () => {
-        console.log("initialize")
         // Connect to STUN servers and enable logging
         connection = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -178,7 +176,6 @@
         connection.onsignalingstatechange = showState;
         // Open client data channel
         connection.ondatachannel = event => {
-            console.log("ONDATACHANNEL !!!!");
             peers.push(event.channel);
             event.channel.onmessage = handleMessage;
             worker = true;
@@ -187,95 +184,56 @@
     const host = async (event) => {
         // Create ICE candidate
         connection.onicecandidate = event => {
-            console.log("host onicecandidate", event);
-            //console.groupCollapsed('[offerer] onicecandidate');
-            //console.log(event.candidate);
-            //console.groupEnd();
             if (event.candidate) {
-                console.log("host event.candidate", event.candidate);
                 connection.yolocandidate = JSON.parse(JSON.stringify(event.candidate));
                 const offer = connection.localDescription;
                 const hostOffer = { type: offer.type, sdp: offer.sdp };
-                console.log("hostOffer", hostOffer);
                 const hostID = {
                     ICE: connection.yolocandidate,
                     sdp: hostOffer,
                 };
                 // Store the offer to HTML DOM
-                console.log("hostID", hostID);
                 showOwnID(btoa(JSON.stringify(hostID)));
             }
         };
         // Create a local offer to be shared
-        console.log("createOffer", connection);
-        const channel = connection.createDataChannel("testtest");
+        const channel = connection.createDataChannel("laskin.live");
         // Open host data channel
         channel.onmessage = handleMessage;
         channel.onopen = event => {
-            console.log('host channel open', event)
             peers.push(event.currentTarget);
-            console.log("peers666", peers);
         };
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
 
     };
     const allow = async (event) => {
-        console.log("allow");
         const { ICE, sdp } = JSON.parse(atob(document.getElementById("webrtc-allow").value));
-        console.log("allow ICE", ICE);
-        console.log("allow sdp", sdp);
         await connection.setRemoteDescription(sdp);
         await connection.addIceCandidate(ICE);
     };
     const join = async (event) => {
         // Create ICE candidate
         connection.onicecandidate = event => {
-            console.log("join onicecandidate", event);
-            //console.groupCollapsed('[offerer] onicecandidate');
-            //console.log(event.candidate);
-            //console.groupEnd();
             if (event.candidate) {
-                console.log("join event.candidate", event.candidate);
                 connection.yolocandidate = JSON.parse(JSON.stringify(event.candidate));
                 const offer = connection.localDescription;
                 const joinOffer = { type: offer.type, sdp: offer.sdp };
-                console.log("joinOffer", joinOffer);
                 const joinID = {
                     ICE: connection.yolocandidate,
                     sdp: joinOffer,
                 };
                 // Store the offer to HTML DOM
-                console.log("joinID", joinID);
                 showOwnID(btoa(JSON.stringify(joinID)));
             }
         };
         // Start hosting a connection
-        console.log("Joining...");
         const { sdp, ICE } = JSON.parse(atob(document.getElementById("webrtc-id-foreign").value));
-        console.log("sdp", sdp);
-        console.log("ICE", ICE);
         await connection.setRemoteDescription(sdp);
         const answer = await connection.createAnswer();
         await connection.setLocalDescription(answer);
-        const emt = { type: answer.type, sdp: answer.sdp };
-        console.log("emt", emt);
-        document.getElementById("webrtc-id").value = btoa(JSON.stringify(emt));
+        document.getElementById("webrtc-id").value = btoa(JSON.stringify({ type: answer.type, sdp: answer.sdp }));
         await connection.addIceCandidate(ICE);
-        /*
-        const friend = document.getElementById('webrtc-id-foreign');
-        console.log("friend", friend.value);
-        const sdp = JSON.parse(atob(friend.value));
-        console.log("sdp", sdp);
-        if (connection.iceConnectionState == "checking") {
-            connection.setRemoteDescription(sdp).catch(print)
-            return
-        }
-        connection.setRemoteDescription(sdp)
-        .then(d => connection.createOffer())
-        .then(d => connection.setLocalDescription(d))
-        .catch(print)
-        */
     };
     // **********
     // CALCULATOR
@@ -431,11 +389,9 @@
     const calculatorLogic = async (e) => {
         e.preventDefault();
         const content = new FormData(e.target).get("formula");
-        console.log("peers", peers);
         // Don't allow workers to send data
         if (!worker) {
             for (let p of peers) {
-                console.log("Sending ", content);
                 p.send(content);
             };
         };
@@ -462,8 +418,8 @@
     const initialize = () => {
         // Start a WebRTC connection with STUN servers
         initializeConnection();
-        // ASD
-        document.getElementById('peers').onclick = logPeers;
+        // Log peers if needed
+        // document.getElementById('peers').onclick = logPeers;
         // Host a WebRTC connection
         document.getElementById('host').onclick = host;
         // Host a WebRTC connection
