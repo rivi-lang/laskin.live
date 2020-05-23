@@ -13,15 +13,43 @@
             font-family: "Inter", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
         }
 
+        #layout {
+            display: grid;
+            justify-items: center;
+            gap: 2em;
+        }
+
         /*TODO pooling styling*/
         #pooling {
-            display: none;
+            display: grid;
+            gap: 0;
+        }
+
+        #pooling label {
+            text-align: right;
+        }
+
+        .tricolumn {
+            display: grid;
+            grid-template-columns: 1fr 10rem 1fr;
+            justify-content: center;
+            align-content: center;
+            gap: 0.5em;
+        }
+
+        .tricolumn p {
+            padding: 0;
+            margin: 0;
         }
 
         #calculator {
-            display: flex;
-            flex-direction: column;
+            max-width: 10rem;
             border: 2px solid black;
+        }
+
+        #formula {
+            max-width: 10rem;
+            outline: none;
         }
 
         #result {
@@ -51,40 +79,176 @@
 </head>
 
 <body>
-    <aside id="pooling">
-        <span class="header">Pooling</span>
-        <div>you: <input id="webrtc-id"></input></div>
-        <div>a friend: <input placeholder="your friend's id here" id="webrtc-id-foreign"></input></div>
-        <div>
-            <button type="button" id="pool-create">Create & Connect</button>
-            <button type="button" id="pool-connect">Connect</button>
-        </div>
-    </aside>
-    <main>
+    <div id="layout">
         <h1>&#128169;laskin.live</h1>
-        <form method="POST" enctype="multipart/form-data" id="calculator" onsubmit="return false;">
-            <input autofocus autocomplete="off" id="formula" name="formula" pattern="[0-9a\+\s]*" minlength=3 required>
-            <samp id="result"></samp>
-            <div id="buttons">
-                <input type="button" value="7">
-                <input type="button" value="8">
-                <input type="button" value="9">
-                <input type="button" value="4">
-                <input type="button" value="5">
-                <input type="button" value="6">
-                <input type="button" value="1">
-                <input type="button" value="2">
-                <input type="button" value="3">
-                <input type="button" value="0">
-                <input type="button" value="+">
-                <input type="submit" value="=">
+        <div id="pooling">
+            <div id="pool-status" class="tricolumn">
+                <label for="status" class="status">Status:</label>
+                <span id="status">disconnected</span>
+                <p id="emoji" />
             </div>
-        </form>
-    </main>
-    <p id="error"></p>
-    <div id="stdout"></div>
+            <div id="pool-self" class="tricolumn">
+                <label for="webrtc-id">Your ID: </label>
+                <input class="limited" id="webrtc-id"></input>
+                <button type="button" id="host">Host</button>
+            </div>
+            <div id="pool-self" class="tricolumn">
+                <label for="webrtc-id">Allow ID: </label>
+                <input class="limited" id="webrtc-allow"></input>
+                <button type="button" id="allow">Allow</button>
+            </div>
+            <div id="pool-friend" class="tricolumn">
+                <label for="webrtc-id-foreign">Their ID:</label>
+                <input class="limited" placeholder="your friend's id here" id="webrtc-id-foreign"></input>
+                <button type="button" id="join">Join</button>
+            </div>
+        </div>
+        <div id="form">
+            <form id="calculator" class="limited" method="POST" enctype="multipart/form-data" onsubmit="return false;">
+                <div id="display">
+                    <input autofocus autocomplete="off" id="formula" name="formula" pattern="[0-9a\+\s]*" minlength=3
+                        required>
+                    <h2 id="result"></h2>
+                </div>
+                <div id="buttons">
+                    <input type="button" value="7">
+                    <input type="button" value="8">
+                    <input type="button" value="9">
+                    <input type="button" value="4">
+                    <input type="button" value="5">
+                    <input type="button" value="6">
+                    <input type="button" value="1">
+                    <input type="button" value="2">
+                    <input type="button" value="3">
+                    <input type="button" value="0">
+                    <input type="button" value="+">
+                    <input type="submit" value="=">
+                </div>
+            </form>
+        </div>
+        <p id="error"></p>
+        <div id="stdout"></div>
+    </div>
 </body>
 <script type="module">
+    // **********
+    // CONNECTION
+    // **********
+    let connection;
+    const showOwnID = (ID) => {
+        console.log("show own", ID);
+        document.getElementById("webrtc-id").value = ID;
+    }
+    const showState = () => {
+        console.log("-----State change-------");
+        console.log("signalingState", connection.signalingState);
+        console.log("connectionState", connection.connectionState);
+        console.log("------------------------");
+    };
+    const initializeConnection = async () => {
+        console.log("initialize")
+        // Connect to STUN servers and enable logging
+        connection = new RTCPeerConnection({ iceServers: [{ 'urls': 'stun:stun.l.google.com:19302' }] });
+        connection.onconnectionstatechange = showState;
+        connection.onsignalingstatechange = showState;
+    };
+    const host = async (event) => {
+        // Create ICE candidate
+        connection.onicecandidate = event => {
+            console.log("host onicecandidate", event);
+            //console.groupCollapsed('[offerer] onicecandidate');
+            //console.log(event.candidate);
+            //console.groupEnd();
+            if (event.candidate) {
+                console.log("host event.candidate", event.candidate);
+                connection.yolocandidate = JSON.parse(JSON.stringify(event.candidate));
+                const offer = connection.localDescription;
+                const hostOffer = { type: offer.type, sdp: offer.sdp };
+                console.log("hostOffer", hostOffer);
+                const hostID = {
+                    ICE: connection.yolocandidate,
+                    sdp: hostOffer,
+                };
+                // Store the offer to HTML DOM
+                console.log("hostID", hostID);
+                showOwnID(btoa(JSON.stringify(hostID)));
+            }
+        };
+        // Create a local offer to be shared
+        console.log("createOffer", connection);
+        const channel = connection.createDataChannel("testtest");
+        channel.onopen = event => console.log('host channel open');
+        const offer = await connection.createOffer();
+        await connection.setLocalDescription(offer);
+
+    };
+    const allow = async (event) => {
+        console.log("allow");
+        const { ICE, sdp } = JSON.parse(atob(document.getElementById("webrtc-allow").value));
+        console.log("allow ICE", ICE);
+        console.log("allow sdp", sdp);
+        await connection.setRemoteDescription(sdp);
+        await connection.addIceCandidate(ICE);
+    };
+    const join = async (event) => {
+        // Create ICE candidate
+        connection.onicecandidate = event => {
+            console.log("join onicecandidate", event);
+            //console.groupCollapsed('[offerer] onicecandidate');
+            //console.log(event.candidate);
+            //console.groupEnd();
+            if (event.candidate) {
+                console.log("join event.candidate", event.candidate);
+                connection.yolocandidate = JSON.parse(JSON.stringify(event.candidate));
+                const offer = connection.localDescription;
+                const joinOffer = { type: offer.type, sdp: offer.sdp };
+                console.log("joinOffer", joinOffer);
+                const joinID = {
+                    ICE: connection.yolocandidate,
+                    sdp: joinOffer,
+                };
+                // Store the offer to HTML DOM
+                console.log("joinID", joinID);
+                showOwnID(btoa(JSON.stringify(joinID)));
+            }
+        };
+        // Create a data channel listener
+        connection.ondatachannel = event => {
+            console.log("join data channel created");
+            const joinChannel = event.channel;
+            joinChannel.onopen = event => console.log("join channel open");
+        }
+        // Start hosting a connection
+        console.log("Joining...");
+        const { sdp, ICE } = JSON.parse(atob(document.getElementById("webrtc-id-foreign").value));
+        console.log("sdp", sdp);
+        console.log("ICE", ICE);
+        await connection.setRemoteDescription(sdp);
+        const answer = await connection.createAnswer();
+        await connection.setLocalDescription(answer);
+        const emt = { type: answer.type, sdp: answer.sdp };
+        console.log("emt", emt);
+        document.getElementById("webrtc-id").value = btoa(JSON.stringify(emt));
+        await connection.addIceCandidate(ICE);
+        /*
+        const friend = document.getElementById('webrtc-id-foreign');
+        console.log("friend", friend.value);
+        const sdp = JSON.parse(atob(friend.value));
+        console.log("sdp", sdp);
+        if (connection.iceConnectionState == "checking") {
+            connection.setRemoteDescription(sdp).catch(print)
+            return
+        }
+        connection.setRemoteDescription(sdp)
+        .then(d => connection.createOffer())
+        .then(d => connection.setLocalDescription(d))
+        .catch(print)
+        */
+    };
+    // **********
+    // CALCULATOR
+    // **********
+
     // Import glslang to compile kernels into bytecode
     import glslangModule from 'https://unpkg.com/@webgpu/glslang@0.0.15/dist/web-devel-onefile/glslang.js';
 
@@ -214,10 +378,10 @@
         const lenLeft = left.length;
         const lenRight = right.length;
         if (lenLeft === 1 && lenRight > 1) {
-            return [right.map(c=>left[0]), right];
+            return [right.map(c => left[0]), right];
         }
         if (lenRight === 1 && lenLeft > 1) {
-            return [left, left.map(c=>right[0])];
+            return [left, left.map(c => right[0])];
         }
         // Only allow arrays of equal length, ie "2 2 + 3 3" but not "2 2 + 3 3 3"
         if (nested.some(arr => arr.length !== lenLeft)) return [];
@@ -257,8 +421,16 @@
         return false;
     };
 
-    // Initialize DOM<>JS<>GPU interactions
+    // Initialize DOM<>JS<>WEBRTC<>GPU interactions
     const initialize = () => {
+        // Start a WebRTC connection with STUN servers
+        initializeConnection();
+        // Host a WebRTC connection
+        document.getElementById('host').onclick = host;
+        // Host a WebRTC connection
+        document.getElementById('allow').onclick = allow;
+        // Join to a WebRTC connection
+        document.getElementById('join').onclick = join;
         // Buttons append elements to the formula
         const push = (elem) => document.getElementById("formula").value += elem.target.value;
         document.querySelectorAll("#calculator input[type=button]").forEach(elem => elem.onclick = push);
@@ -270,200 +442,7 @@
 
 <script type="module">
     /* TODO salvage good stuff from first implementation
-    import glslangModule from 'https://unpkg.com/@webgpu/glslang@0.0.15/dist/web-devel-onefile/glslang.js';
     var peers = new Array();
-    const setError = (error) => document.getElementById("error").innerHTML = error;
-    document.getElementById("calculator").onsubmit = (e) => {
-        const content = new FormData(e.target).get("formula");
-        const result = e.target.querySelector("#result");
-        try {
-            const response = new Function('"use strict";return ' + content)();
-            if (!response) {
-                setError("Invalid response");
-                return false
-            }
-            result.innerHTML = response;
-        } catch (e) { setError(e) }
-        // todo: write to webrtc
-        // peers.push(content)
-        fence(content, result);
-        return false
-    };
-
-    const push = (elem) => document.getElementById("formula").value += elem.target.value;
-    document.querySelectorAll("#calculator input[type=button]").forEach(elem => elem.onclick = push);
-
-    const kernels = {
-        "+":
-            `#version 450
-layout(std430, set = 0, binding = 0) buffer LeftBuffer {
-    float numbers[];
-} lhs;
-
-layout(std430, set = 0, binding = 1) buffer RightBuffer {
-    float numbers[];
-} rhs;
-
-void main() {
-    uint index = gl_GlobalInvocationID.x;
-    lhs.numbers[index] += rhs.numbers[index];
-}`
-    };
-
-    async function run(kernel, args) {
-
-        const glslang = await glslangModule();
-        const adapter = await navigator.gpu.requestAdapter();
-        const device = await adapter.requestDevice();
-
-        const lhs = new Float32Array(args[0]);
-        const rhs = new Float32Array(args[1]);
-
-        const [lhsBuffer, lhsAllocation] = device.createBufferMapped({
-            size: lhs.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-        });
-        new Float32Array(lhsAllocation).set(lhs);
-        lhsBuffer.unmap();
-
-        const [rhsBuffer, rhsAllocation] = device.createBufferMapped({
-            size: rhs.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-        });
-        new Float32Array(rhsAllocation).set(rhs);
-        rhsBuffer.unmap();
-
-        const deviceBuffer = device.createBuffer({
-            size: lhs.byteLength,
-            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-        });
-
-        const bindGroupLayout = device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.COMPUTE,
-                    type: "storage-buffer",
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.COMPUTE,
-                    type: "storage-buffer",
-                },
-            ],
-        });
-
-        const bindGroup = device.createBindGroup({
-            layout: bindGroupLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: { buffer: lhsBuffer },
-                },
-                {
-                    binding: 1,
-                    resource: { buffer: rhsBuffer },
-                },
-            ],
-        });
-
-        const computePipeline = device.createComputePipeline({
-            layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
-            computeStage: {
-                module: device.createShaderModule({
-                    code: glslang.compileGLSL(kernel, "compute")
-                }),
-                entryPoint: "main",
-            }
-        });
-
-        const commandPool = device.createCommandEncoder();
-        const commandBuffer = commandPool.beginComputePass();
-        commandBuffer.setPipeline(computePipeline);
-        commandBuffer.setBindGroup(0, bindGroup);
-        commandBuffer.dispatch(lhs.length, 1, 1);
-        commandBuffer.endPass();
-        commandPool.copyBufferToBuffer(lhsBuffer, 0, deviceBuffer, 0, lhs.byteLength);
-        device.defaultQueue.submit([commandPool.finish()]);
-
-        return new Float32Array(await deviceBuffer.mapReadAsync());
-    };
-
-    // fence is a async call to wrap the await methods
-    // it evaluates line and puts the response to container
-    const fence = async (line, container) => {
-        console.log("Starting...");
-        const res = await gpuEval(line);
-        console.log("Response:", res);
-        console.log("Done!");
-        if (res) {
-            container.innerHTML = res;
-        }
-        console.log("fenced..")
-        return res
-    };
-
-    // gpuEval takes a text line and attempts to interprete + evaluate it
-    async function gpuEval(line) {
-        const args = interprete(line);
-        console.log("args", args);
-        if (args.length != 2) {
-            console.log("Parse error");
-            // todo: return unless interpretation is okay
-            return;
-        }
-        console.log("Arguments:", args);
-        return await run(
-            kernels["+"],
-            [[1, 2, 3, 4], [1, 1, 1, 1]], // for now hardcoded, otherwise should be 'args'
-        );
-    }
-
-    // todo
-    function interprete(text) {
-
-        const addition = (c) => c === "+";
-        const hasAddition = [...text].some(addition);
-        if (!hasAddition) { return []; }
-
-        // todo: should split first by plus
-
-        let vals = [];
-        let rhs = [];
-        for (var char of text.split(" ")) {
-            switch (char) {
-                case "+":
-                    vals.push(rhs)
-                    rhs = []
-                    break
-                default:
-                    const f = parseFloat(char)
-                    if (!isNaN(f)) { rhs.push(f) }
-            }
-        }
-        vals.push(rhs)
-
-        // should return if not dyadic for now
-        if (vals.length < 2) { return []; }
-
-        const sameLen = vals[0].length == vals[1].length;
-        const scalarEither = vals[0].length == 1 || vals[1].length == 1;
-        if (!sameLen && !scalarEither) {
-            // if length is not the same, and neither is scalar, then return
-            // i.e., shape error
-            return [];
-        }
-
-        if (!sameLen) {
-            // todo: otherwise should expand the scalar, e.g.:
-            // 1 + 1 2 3 4
-            // => 1 1 1 1 + 1 2 3 4
-        }
-
-        // vals is a matrix, where first row is lhs, second rhs args
-        return vals;
-    }
-
     const stdout = document.getElementById('stdout');
 
     print = data => {
