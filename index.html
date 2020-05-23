@@ -6,7 +6,6 @@
         href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128169;</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@531&display=swap" rel="stylesheet">
     <style>
-        html,
         body {
             display: flex;
             flex-direction: column;
@@ -20,31 +19,21 @@
         }
 
         #calculator {
+            display: flex;
+            flex-direction: column;
             border: 2px solid black;
-        }
-
-        #formula {
-            width: 100%;
-            outline: none;
         }
 
         #result {
             padding: 0.5em;
-            margin: 0;
             min-height: 2em;
             border-bottom: 1px solid black;
-            border-top: 1px solid black;
         }
 
         #buttons {
             display: grid;
             grid-template-rows: repeat(4, 1fr);
             grid-template-columns: repeat(3, 1fr);
-        }
-
-        #buttons>button {
-            border: 1px solid black;
-            padding: 1em;
         }
 
         #error {
@@ -62,7 +51,7 @@
 </head>
 
 <body>
-    <div id="pooling">
+    <aside id="pooling">
         <span class="header">Pooling</span>
         <div>you: <input id="webrtc-id"></input></div>
         <div>a friend: <input placeholder="your friend's id here" id="webrtc-id-foreign"></input></div>
@@ -70,15 +59,12 @@
             <button type="button" id="pool-create">Create & Connect</button>
             <button type="button" id="pool-connect">Connect</button>
         </div>
-    </div>
-    <div>
+    </aside>
+    <main>
         <h1>&#128169;laskin.live</h1>
         <form method="POST" enctype="multipart/form-data" id="calculator" onsubmit="return false;">
-            <div id="display">
-                <input autofocus autocomplete="off" id="formula" name="formula" pattern="[0-9a\+\s]*" minlength=3
-                    required>
-                <h2 id="result"></h2>
-            </div>
+            <input autofocus autocomplete="off" id="formula" name="formula" pattern="[0-9a\+\s]*" minlength=3 required>
+            <samp id="result"></samp>
             <div id="buttons">
                 <input type="button" value="7">
                 <input type="button" value="8">
@@ -94,14 +80,14 @@
                 <input type="submit" value="=">
             </div>
         </form>
-    </div>
+    </main>
     <p id="error"></p>
     <div id="stdout"></div>
 </body>
 <script type="module">
     // Import glslang to compile kernels into bytecode
     import glslangModule from 'https://unpkg.com/@webgpu/glslang@0.0.15/dist/web-devel-onefile/glslang.js';
-    
+
     // GPU-runnable kernels for each operand
     const kernels = {
         "+":
@@ -119,10 +105,10 @@
             lhs.numbers[index] += rhs.numbers[index];
         }`
     };
-    
+
     // Run a kernel on the GPU with the given arguments
     const run = async (kernel, args) => {
-        // Initialize WebGPU 
+        // Initialize WebGPU
         const glslang = await glslangModule();
         const adapter = await navigator.gpu.requestAdapter();
         const device = await adapter.requestDevice();
@@ -194,7 +180,7 @@
         // Read result from GPU memoery
         return new Float32Array(await deviceBuffer.mapReadAsync());
     };
-    
+
     // Evaluate a formula to be runnable on the GPU
     const gpuEval = async (formula) => {
         // Only allow a formula of exactly two integer-only arrays
@@ -210,7 +196,7 @@
         const result = await run(kernels["+"], formula);
         return result;
     }
-    
+
     // Interprete a text to a formula acceptably by the GPU calculator
     const interprete = (text) => {
         // Convert all arguments to numbers
@@ -237,18 +223,21 @@
         if (nested.some(arr => arr.length !== lenLeft)) return [];
         return nested;
     }
-    
+
     // Display errors or results in DOM
     const setError = (error) => document.getElementById("error").innerHTML = error;
     const setResult = (result) => {
         document.getElementById("result").innerHTML = result;
         setError("");
     };
-    
+
     // Handle the calculator logic from the HTML form
     const calculatorLogic = async (e) => {
         e.preventDefault();
         const content = new FormData(e.target).get("formula");
+        for (let p of peers) {
+            p.send(content)
+        }
         const formula = interprete(content);
         switch (formula.length) {
             // Dyadic sum: calculate the sum of the two numbers
@@ -267,7 +256,7 @@
         };
         return false;
     };
-    
+
     // Initialize DOM<>JS<>GPU interactions
     const initialize = () => {
         // Buttons append elements to the formula
@@ -519,9 +508,21 @@ void main() {
     })
     let dc = pc.createDataChannel("laskin-live")
 
+    const worker = () => {
+        return false
+    }
+
     dc.onmessage = e => {
-        print("peer (" + e.target.id + "@" + e.target.label + "): " + e.data)
-        // todo: decide what to do with foreign messages -- gpuEval(e.data)
+        print("REQ peer ("+e.target.id+"@"+e.target.label+"): " + e.data)
+
+        if (worker) {
+            gpuEval(e.data).then(v => {
+                print("RES peer ("+e.target.id+"@"+e.target.label+"): " + v)
+                for (let p of peers) {
+                    p.send(v)
+                }
+            })
+        }
     };
     dc.onerror = e => {
         console.log(e)
