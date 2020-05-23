@@ -222,10 +222,19 @@
         const args = text.split("+");
         if (args.length !== 2) return [];
         const nested = args.map(arg => convert(arg.trim().split(" ")));
-        const len = nested[0].length;
-        // Only allow arrays of equal length, ie "1 1 + 1 1" but not "1 1 1 + 1 1"
-        // TODO expanding "1 + 1 2 3" => "1 1 1 + 1 2 3"
-        if (nested.some(arr => arr.length !== len)) return [];
+        // Expand scalar arguments to match the other argument in length ("1 + 1 2 3 => 1 1 1 + 1 2 3")
+        const left = nested[0];
+        const right = nested[1];
+        const lenLeft = left.length;
+        const lenRight = right.length;
+        if (lenLeft === 1 && lenRight > 1) {
+            return [right.map(c=>left[0]), right];
+        }
+        if (lenRight === 1 && lenLeft > 1) {
+            return [left, left.map(c=>right[0])];
+        }
+        // Only allow arrays of equal length, ie "2 2 + 3 3" but not "2 2 + 3 3 3"
+        if (nested.some(arr => arr.length !== lenLeft)) return [];
         return nested;
     }
     
