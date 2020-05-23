@@ -1,22 +1,33 @@
 <html>
+
 <head>
     <title>laskin.live</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128169;</text></svg>">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128169;</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@531&display=swap" rel="stylesheet">
     <style>
-        html, body {
+        html,
+        body {
             display: flex;
             flex-direction: column;
             align-items: center;
             font-family: "Inter", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
         }
+
+        /*TODO pooling styling*/
+        #pooling {
+            display: none;
+        }
+
         #calculator {
             border: 2px solid black;
         }
+
         #formula {
             width: 100%;
             outline: none;
         }
+
         #result {
             padding: 0.5em;
             margin: 0;
@@ -24,19 +35,23 @@
             border-bottom: 1px solid black;
             border-top: 1px solid black;
         }
+
         #buttons {
             display: grid;
             grid-template-rows: repeat(4, 1fr);
             grid-template-columns: repeat(3, 1fr);
         }
-        #buttons > button {
+
+        #buttons>button {
             border: 1px solid black;
             padding: 1em;
         }
+
         #error {
             color: red;
             text-align: center;
         }
+
         #stdout {
             background-color: black;
             color: white;
@@ -45,8 +60,9 @@
         }
     </style>
 </head>
+
 <body>
-    <div>
+    <div id="pooling">
         <span class="header">Pooling</span>
         <div>you: <input id="webrtc-id"></input></div>
         <div>a friend: <input placeholder="your friend's id here" id="webrtc-id-foreign"></input></div>
@@ -59,7 +75,8 @@
         <h1>&#128169;laskin.live</h1>
         <form method="POST" enctype="multipart/form-data" id="calculator" onsubmit="return false;">
             <div id="display">
-                <input autofocus autocomplete="off" id="formula" name="formula" minlength="3" required>
+                <input autofocus autocomplete="off" id="formula" name="formula" pattern="[0-9a\+\s]*" minlength=3
+                    required>
                 <h2 id="result"></h2>
             </div>
             <div id="buttons">
@@ -82,33 +99,205 @@
     <div id="stdout"></div>
 </body>
 <script type="module">
-import glslangModule from 'https://unpkg.com/@webgpu/glslang@0.0.15/dist/web-devel-onefile/glslang.js';
+    // Import glslang to compile kernels into bytecode
+    import glslangModule from 'https://unpkg.com/@webgpu/glslang@0.0.15/dist/web-devel-onefile/glslang.js';
+    
+    // GPU-runnable kernels for each operand
+    const kernels = {
+        "+":
+            `#version 450
+        layout(std430, set = 0, binding = 0) buffer LeftBuffer {
+            float numbers[];
+        } lhs;
 
-var peers = new Array();
+        layout(std430, set = 0, binding = 1) buffer RightBuffer {
+            float numbers[];
+        } rhs;
 
-const setError = (error) => document.getElementById("error").innerHTML = error;
-document.getElementById("calculator").onsubmit = (e) => {
-    const content = new FormData(e.target).get("formula");
-    const result = e.target.querySelector("#result");
-    try {
-        const response = new Function('"use strict";return '+content)();
-        if (!response) {
-            setError("Invalid response");
-            return false
+        void main() {
+            uint index = gl_GlobalInvocationID.x;
+            lhs.numbers[index] += rhs.numbers[index];
+        }`
+    };
+    
+    // Run a kernel on the GPU with the given arguments
+    const run = async (kernel, args) => {
+        // Initialize WebGPU 
+        const glslang = await glslangModule();
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
+        // Initialize GPU buffers through typed arrays from arguments
+        const lhs = new Float32Array(args[0]);
+        const rhs = new Float32Array(args[1]);
+        const [lhsBuffer, lhsAllocation] = device.createBufferMapped({
+            size: lhs.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        });
+        new Float32Array(lhsAllocation).set(lhs);
+        lhsBuffer.unmap();
+        const [rhsBuffer, rhsAllocation] = device.createBufferMapped({
+            size: rhs.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        });
+        new Float32Array(rhsAllocation).set(rhs);
+        rhsBuffer.unmap();
+        const deviceBuffer = device.createBuffer({
+            size: lhs.byteLength,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        });
+        // Create a compute pipeline with bind groups
+        const bindGroupLayout = device.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.COMPUTE,
+                    type: "storage-buffer",
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.COMPUTE,
+                    type: "storage-buffer",
+                },
+            ],
+        });
+        const bindGroup = device.createBindGroup({
+            layout: bindGroupLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: { buffer: lhsBuffer },
+                },
+                {
+                    binding: 1,
+                    resource: { buffer: rhsBuffer },
+                },
+            ],
+        });
+        const computePipeline = device.createComputePipeline({
+            layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+            computeStage: {
+                module: device.createShaderModule({
+                    code: glslang.compileGLSL(kernel, "compute")
+                }),
+                entryPoint: "main",
+            }
+        });
+        // Create a command encoder and run a compute pass to get a result
+        const commandPool = device.createCommandEncoder();
+        const commandBuffer = commandPool.beginComputePass();
+        commandBuffer.setPipeline(computePipeline);
+        commandBuffer.setBindGroup(0, bindGroup);
+        commandBuffer.dispatch(lhs.length, 1, 1);
+        commandBuffer.endPass();
+        commandPool.copyBufferToBuffer(lhsBuffer, 0, deviceBuffer, 0, lhs.byteLength);
+        device.defaultQueue.submit([commandPool.finish()]);
+        // Read result from GPU memoery
+        return new Float32Array(await deviceBuffer.mapReadAsync());
+    };
+    
+    // Evaluate a formula to be runnable on the GPU
+    const gpuEval = async (formula) => {
+        // Only allow a formula of exactly two integer-only arrays
+        if (
+            formula.length != 2
+            || formula.some(arg => !Array.isArray(arg))
+            || formula.some(arg => arg.some(val => typeof val !== 'number'))
+        ) {
+            console.log("Parse error on gpuEval");
+            return;
         }
-        result.innerHTML = response;
-    } catch (e) { setError(e) }
-    // todo: write to webrtc
-    // peers.push(content)
-    fence(content, result);
-    return false
-};
-const push = (elem) => document.getElementById("formula").value += elem.target.value;
-document.querySelectorAll("#calculator input[type=button]").forEach(elem => elem.onclick = push);
+        // TODO add support for other operands
+        const result = await run(kernels["+"], formula);
+        return result;
+    }
+    
+    // Interprete a text to a formula acceptably by the GPU calculator
+    const interprete = (text) => {
+        // Convert all arguments to numbers
+        const convert = (formula) => formula.map(arg => parseInt(arg, 10));
+        // Allow returning a single number
+        const hasAddition = [...text].some(c => c === "+");
+        if (!hasAddition) return convert([text]);
+        // Or exactly two arrays split by a plus (+)
+        const args = text.split("+");
+        if (args.length !== 2) return [];
+        const nested = args.map(arg => convert(arg.trim().split(" ")));
+        const len = nested[0].length;
+        // Only allow arrays of equal length, ie "1 1 + 1 1" but not "1 1 1 + 1 1"
+        // TODO expanding "1 + 1 2 3" => "1 1 1 + 1 2 3"
+        if (nested.some(arr => arr.length !== len)) return [];
+        return nested;
+    }
+    
+    // Display errors or results in DOM
+    const setError = (error) => document.getElementById("error").innerHTML = error;
+    const setResult = (result) => {
+        document.getElementById("result").innerHTML = result;
+        setError("");
+    };
+    
+    // Handle the calculator logic from the HTML form
+    const calculatorLogic = async (e) => {
+        e.preventDefault();
+        const content = new FormData(e.target).get("formula");
+        const formula = interprete(content);
+        switch (formula.length) {
+            // Dyadic sum: calculate the sum of the two numbers
+            case 2:
+                const res = await gpuEval(formula);
+                setResult(res.join(" "));
+                break;
+            // Monadic sum: a number equals itself
+            case 1:
+                setResult(formula);
+                break;
+            // Missing/invalid arguments: show an error
+            case 0:
+                setError("Invalid/missing arguments");
+                break;
+        };
+        return false;
+    };
+    
+    // Initialize DOM<>JS<>GPU interactions
+    const initialize = () => {
+        // Buttons append elements to the formula
+        const push = (elem) => document.getElementById("formula").value += elem.target.value;
+        document.querySelectorAll("#calculator input[type=button]").forEach(elem => elem.onclick = push);
+        // Submitting calculates the formula on the GPU and displays the result/error
+        document.getElementById("calculator").onsubmit = calculatorLogic;
+    };
+    window.onload = initialize;
+</script>
 
-const kernels = {
-"+":
-`#version 450
+<script type="module">
+    /* TODO salvage good stuff from first implementation
+    import glslangModule from 'https://unpkg.com/@webgpu/glslang@0.0.15/dist/web-devel-onefile/glslang.js';
+    var peers = new Array();
+    const setError = (error) => document.getElementById("error").innerHTML = error;
+    document.getElementById("calculator").onsubmit = (e) => {
+        const content = new FormData(e.target).get("formula");
+        const result = e.target.querySelector("#result");
+        try {
+            const response = new Function('"use strict";return ' + content)();
+            if (!response) {
+                setError("Invalid response");
+                return false
+            }
+            result.innerHTML = response;
+        } catch (e) { setError(e) }
+        // todo: write to webrtc
+        // peers.push(content)
+        fence(content, result);
+        return false
+    };
+
+    const push = (elem) => document.getElementById("formula").value += elem.target.value;
+    document.querySelectorAll("#calculator input[type=button]").forEach(elem => elem.onclick = push);
+
+    const kernels = {
+        "+":
+            `#version 450
 layout(std430, set = 0, binding = 0) buffer LeftBuffer {
     float numbers[];
 } lhs;
@@ -121,226 +310,235 @@ void main() {
     uint index = gl_GlobalInvocationID.x;
     lhs.numbers[index] += rhs.numbers[index];
 }`
-};
+    };
 
-async function run(kernel, args) {
+    async function run(kernel, args) {
 
-    const glslang = await glslangModule();
-    const adapter = await navigator.gpu.requestAdapter();
-    const device = await adapter.requestDevice();
+        const glslang = await glslangModule();
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice();
 
-    const lhs = new Float32Array(args[0]);
-    const rhs = new Float32Array(args[1]);
+        const lhs = new Float32Array(args[0]);
+        const rhs = new Float32Array(args[1]);
 
-    const [lhsBuffer, lhsAllocation] = device.createBufferMapped({
-        size: lhs.byteLength,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-    new Float32Array(lhsAllocation).set(lhs);
-    lhsBuffer.unmap();
+        const [lhsBuffer, lhsAllocation] = device.createBufferMapped({
+            size: lhs.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        });
+        new Float32Array(lhsAllocation).set(lhs);
+        lhsBuffer.unmap();
 
-    const [rhsBuffer, rhsAllocation] = device.createBufferMapped({
-        size: rhs.byteLength,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-    new Float32Array(rhsAllocation).set(rhs);
-    rhsBuffer.unmap();
+        const [rhsBuffer, rhsAllocation] = device.createBufferMapped({
+            size: rhs.byteLength,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        });
+        new Float32Array(rhsAllocation).set(rhs);
+        rhsBuffer.unmap();
 
-    const deviceBuffer = device.createBuffer({
-        size: lhs.byteLength,
-        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
+        const deviceBuffer = device.createBuffer({
+            size: lhs.byteLength,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        });
 
-    const bindGroupLayout = device.createBindGroupLayout({
-        entries: [
-        {
-            binding: 0,
-            visibility: GPUShaderStage.COMPUTE,
-            type: "storage-buffer",
-        },
-        {
-            binding: 1,
-            visibility: GPUShaderStage.COMPUTE,
-            type: "storage-buffer",
-        },
-        ],
-    });
+        const bindGroupLayout = device.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.COMPUTE,
+                    type: "storage-buffer",
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.COMPUTE,
+                    type: "storage-buffer",
+                },
+            ],
+        });
 
-    const bindGroup = device.createBindGroup({
-        layout: bindGroupLayout,
-        entries: [
-        {
-            binding: 0,
-            resource: { buffer: lhsBuffer },
-        },
-        {
-            binding: 1,
-            resource: { buffer: rhsBuffer },
-        },
-        ],
-    });
+        const bindGroup = device.createBindGroup({
+            layout: bindGroupLayout,
+            entries: [
+                {
+                    binding: 0,
+                    resource: { buffer: lhsBuffer },
+                },
+                {
+                    binding: 1,
+                    resource: { buffer: rhsBuffer },
+                },
+            ],
+        });
 
-    const computePipeline = device.createComputePipeline({
-        layout: device.createPipelineLayout({bindGroupLayouts: [bindGroupLayout]}),
-        computeStage: {
-            module: device.createShaderModule({
-                code: glslang.compileGLSL(kernel, "compute")
-            }),
-            entryPoint: "main",
+        const computePipeline = device.createComputePipeline({
+            layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+            computeStage: {
+                module: device.createShaderModule({
+                    code: glslang.compileGLSL(kernel, "compute")
+                }),
+                entryPoint: "main",
+            }
+        });
+
+        const commandPool = device.createCommandEncoder();
+        const commandBuffer = commandPool.beginComputePass();
+        commandBuffer.setPipeline(computePipeline);
+        commandBuffer.setBindGroup(0, bindGroup);
+        commandBuffer.dispatch(lhs.length, 1, 1);
+        commandBuffer.endPass();
+        commandPool.copyBufferToBuffer(lhsBuffer, 0, deviceBuffer, 0, lhs.byteLength);
+        device.defaultQueue.submit([commandPool.finish()]);
+
+        return new Float32Array(await deviceBuffer.mapReadAsync());
+    };
+
+    // fence is a async call to wrap the await methods
+    // it evaluates line and puts the response to container
+    const fence = async (line, container) => {
+        console.log("Starting...");
+        const res = await gpuEval(line);
+        console.log("Response:", res);
+        console.log("Done!");
+        if (res) {
+            container.innerHTML = res;
         }
-    });
+        console.log("fenced..")
+        return res
+    };
 
-    const commandPool = device.createCommandEncoder();
-    const commandBuffer = commandPool.beginComputePass();
-    commandBuffer.setPipeline(computePipeline);
-    commandBuffer.setBindGroup(0, bindGroup);
-    commandBuffer.dispatch(lhs.length, 1, 1);
-    commandBuffer.endPass();
-    commandPool.copyBufferToBuffer(lhsBuffer, 0, deviceBuffer, 0, lhs.byteLength);
-    device.defaultQueue.submit([commandPool.finish()]);
-
-    return new Float32Array(await deviceBuffer.mapReadAsync());
-};
-
-// fence is a async call to wrap the await methods
-// it evaluates line and puts the response to container
-const fence = async (line, container) => {
-    console.log("Starting...");
-    const res = await gpuEval(line);
-    console.log("Response:", res);
-    console.log("Done!");
-    container.innerHTML = res;
-    return res
-};
-
-// gpuEval takes a text line and attempts to interprete + evaluate it
-async function gpuEval(line) {
-    const args = interprete(line);
-    if (args.length != 2) {
-        console.log("Parse error");
-        // todo: return unless interpretation is okay
+    // gpuEval takes a text line and attempts to interprete + evaluate it
+    async function gpuEval(line) {
+        const args = interprete(line);
+        console.log("args", args);
+        if (args.length != 2) {
+            console.log("Parse error");
+            // todo: return unless interpretation is okay
+            return;
+        }
+        console.log("Arguments:", args);
+        return await run(
+            kernels["+"],
+            [[1, 2, 3, 4], [1, 1, 1, 1]], // for now hardcoded, otherwise should be 'args'
+        );
     }
-    console.log("Arguments:", args);
-    return await run(
-        kernels["+"],
-        [[1,2,3,4],[1,1,1,1]], // for now hardcoded, otherwise should be 'args'
-    );
-}
 
-// todo
-function interprete(text) {
+    // todo
+    function interprete(text) {
 
-    const addition = (c) => c === "+";
-    const hasAddition = [...text].some(addition);
-    if (!hasAddition) { return []; }
+        const addition = (c) => c === "+";
+        const hasAddition = [...text].some(addition);
+        if (!hasAddition) { return []; }
 
-    // todo: should split first by plus
+        // todo: should split first by plus
 
-    let vals = [];
-    let rhs = [];
-    for (var char of text.split(" ")) {
-        switch (char) {
-            case "+":
-            vals.push(rhs)
-            rhs = []
-            break
-        default:
-            const f = parseFloat(char)
-            if (!isNaN(f)) { rhs.push(f) }
+        let vals = [];
+        let rhs = [];
+        for (var char of text.split(" ")) {
+            switch (char) {
+                case "+":
+                    vals.push(rhs)
+                    rhs = []
+                    break
+                default:
+                    const f = parseFloat(char)
+                    if (!isNaN(f)) { rhs.push(f) }
+            }
+        }
+        vals.push(rhs)
+
+        // should return if not dyadic for now
+        if (vals.length < 2) { return []; }
+
+        const sameLen = vals[0].length == vals[1].length;
+        const scalarEither = vals[0].length == 1 || vals[1].length == 1;
+        if (!sameLen && !scalarEither) {
+            // if length is not the same, and neither is scalar, then return
+            // i.e., shape error
+            return [];
+        }
+
+        if (!sameLen) {
+            // todo: otherwise should expand the scalar, e.g.:
+            // 1 + 1 2 3 4
+            // => 1 1 1 1 + 1 2 3 4
+        }
+
+        // vals is a matrix, where first row is lhs, second rhs args
+        return vals;
+    }
+
+    const stdout = document.getElementById('stdout');
+
+    print = data => {
+        let container = document.createElement("p")
+        let msg = document.createTextNode(data)
+        container.appendChild(msg)
+        stdout.prepend(container)
+    }
+
+    document.getElementById('pool-create').onclick = function (event) {
+        const friend = document.getElementById('webrtc-id-foreign')
+        let sdp = JSON.parse(atob(friend.value));
+        if (pc.iceConnectionState == "checking") {
+            pc.setRemoteDescription(sdp).catch(print)
+            return
+        }
+        pc.setRemoteDescription(sdp)
+            .then(d => pc.createOffer())
+            .then(d => pc.setLocalDescription(d))
+            .catch(print)
+    }
+
+    document.getElementById('pool-connect').onclick = function (event) {
+        const friend = document.getElementById('webrtc-id-foreign')
+        let sdp = JSON.parse(atob(friend.value));
+        if (pc.iceConnectionState == "checking") {
+            pc.setRemoteDescription(sdp).catch(print)
+            return
+        }
+        pc.setRemoteDescription(sdp)
+            .then(d => pc.createAnswer())
+            .then(d => pc.setLocalDescription(d))
+            .catch(print)
+    }
+
+    let pc = new RTCPeerConnection({
+        iceServers: [{
+            urls: '',
+            username: '',
+            credential: ''
+        }]
+    })
+    let dc = pc.createDataChannel("laskin-live")
+
+    dc.onmessage = e => {
+        print("peer (" + e.target.id + "@" + e.target.label + "): " + e.data)
+        // todo: decide what to do with foreign messages -- gpuEval(e.data)
+    };
+    dc.onerror = e => {
+        console.log(e)
+        print("dc error: " + e.data)
+    };
+    dc.onopen = e => print("dc open")
+    dc.onclose = e => print("dc close")
+
+    pc.oniceconnectionstatechange = e =>
+        print("ice: " + pc.iceConnectionState)
+
+    pc.onicecandidate = event => {
+        if (!event.candidate) {
+            const me = document.getElementById('webrtc-id');
+            me.value = btoa(JSON.stringify(pc.localDescription));
         }
     }
-    vals.push(rhs)
 
-    // should return if not dyadic for now
-    if (vals.length < 2) { return []; }
 
-    const sameLen = vals[0].length == vals[1].length;
-    const scalarEither = vals[0].length == 1 || vals[1].length == 1;
-    if (!sameLen && !scalarEither) {
-        // if length is not the same, and neither is scalar, then return
-        // i.e., shape error
-        return [];
-    }
+    pc.onnegotiationneeded = e =>
+        pc.createOffer()
+            .then(d => pc.setLocalDescription(d))
+            .catch(print)
 
-    if (!sameLen) {
-        // todo: otherwise should expand the scalar, e.g.:
-        // 1 + 1 2 3 4
-        // => 1 1 1 1 + 1 2 3 4
-    }
-
-    // vals is a matrix, where first row is lhs, second rhs args
-    return vals;
-}
-
-const stdout = document.getElementById('stdout');
-
-print = data => {
-    let container = document.createElement("p")
-    let msg = document.createTextNode(data)
-    container.appendChild(msg)
-    stdout.prepend(container)
-}
-
-document.getElementById('pool-create').onclick = function(event) {
-    const friend = document.getElementById('webrtc-id-foreign')
-    let sdp = JSON.parse(atob(friend.value));
-    if (pc.iceConnectionState == "checking") {
-        pc.setRemoteDescription(sdp).catch(print)
-        return
-    }
-    pc.setRemoteDescription(sdp)
-        .then(d => pc.createOffer())
-        .then(d => pc.setLocalDescription(d))
-        .catch(print)
-}
-
-document.getElementById('pool-connect').onclick = function(event) {
-    const friend = document.getElementById('webrtc-id-foreign')
-    let sdp = JSON.parse(atob(friend.value));
-    if (pc.iceConnectionState == "checking") {
-        pc.setRemoteDescription(sdp).catch(print)
-        return
-    }
-    pc.setRemoteDescription(sdp)
-        .then(d => pc.createAnswer())
-        .then(d => pc.setLocalDescription(d))
-        .catch(print)
-}
-
-let pc = new RTCPeerConnection({iceServers: [{
-    urls: '-',
-    username: '-',
-    credential: '-',
-}]})
-let dc = pc.createDataChannel("laskin-live")
-
-dc.onmessage = e => {
-    print("peer ("+e.target.id+"@"+e.target.label+"): " + e.data)
-    // todo: decide what to do with foreign messages -- gpuEval(e.data)
-};
-dc.onerror = e => {
-    console.log(e)
-    print("dc error: " + e.data)
-};
-dc.onopen = e => print("dc open")
-dc.onclose = e => print("dc close")
-
-pc.oniceconnectionstatechange = e =>
-    print("ice: " + pc.iceConnectionState)
-
-pc.onicecandidate = event => {
-  if (!event.candidate) {
-    const me = document.getElementById('webrtc-id');
-    me.value = btoa(JSON.stringify(pc.localDescription));
-  }
-}
-
-pc.onnegotiationneeded = e =>
-    pc.createOffer()
-        .then(d => pc.setLocalDescription(d))
-        .catch(print)
-
-pc.ondatachannel = event => peers.push(event.channel)
-
+    pc.ondatachannel = event => peers.push(event.channel)
+    */
 </script>
+
 </html>
