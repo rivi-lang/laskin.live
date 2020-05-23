@@ -101,6 +101,7 @@
                 <label for="webrtc-id-foreign">Their ID:</label>
                 <input class="limited" placeholder="your friend's id here" id="webrtc-id-foreign"></input>
                 <button type="button" id="join">Join</button>
+                <button type="button" id="peers" onclick="asd">Peers</button>
             </div>
         </div>
         <div id="form">
@@ -134,7 +135,29 @@
     // **********
     // CONNECTION
     // **********
+    const domlog = data => {
+        let msg = document.createTextNode(data);
+        let container = document.createElement("p");
+        container.appendChild(msg);
+        document.getElementById('stdout').prepend(container);
+    };
     let connection;
+    var peers = new Array();
+    const logPeers = () => console.log(peers);
+    let worker = false;
+    const handleMessage = async e => {
+        domlog("REQ peer (" + e.target.id + "@" + e.target.label + "): " + e.data);
+        if (worker) {
+            const formula = interprete(e.data);
+            const res = await gpuEval(formula);
+            domlog("RES peer (" + e.target.id + "@" + e.target.label + "): " + res);
+            for (let p of peers) {
+                p.send(res.join(" "));
+            };
+            return;
+        };
+        setResult(e.data);
+    };
     const showOwnID = (ID) => {
         console.log("show own", ID);
         document.getElementById("webrtc-id").value = ID;
@@ -148,9 +171,18 @@
     const initializeConnection = async () => {
         console.log("initialize")
         // Connect to STUN servers and enable logging
-        connection = new RTCPeerConnection({ iceServers: [{ 'urls': 'stun:stun.l.google.com:19302' }] });
+        connection = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
         connection.onconnectionstatechange = showState;
         connection.onsignalingstatechange = showState;
+        // Open client data channel
+        connection.ondatachannel = event => {
+            console.log("ONDATACHANNEL !!!!");
+            peers.push(event.channel);
+            event.channel.onmessage = handleMessage;
+            worker = true;
+        };
     };
     const host = async (event) => {
         // Create ICE candidate
@@ -177,7 +209,13 @@
         // Create a local offer to be shared
         console.log("createOffer", connection);
         const channel = connection.createDataChannel("testtest");
-        channel.onopen = event => console.log('host channel open');
+        // Open host data channel
+        channel.onmessage = handleMessage;
+        channel.onopen = event => {
+            console.log('host channel open', event)
+            peers.push(event.currentTarget);
+            console.log("peers666", peers);
+        };
         const offer = await connection.createOffer();
         await connection.setLocalDescription(offer);
 
@@ -212,12 +250,6 @@
                 showOwnID(btoa(JSON.stringify(joinID)));
             }
         };
-        // Create a data channel listener
-        connection.ondatachannel = event => {
-            console.log("join data channel created");
-            const joinChannel = event.channel;
-            joinChannel.onopen = event => console.log("join channel open");
-        }
         // Start hosting a connection
         console.log("Joining...");
         const { sdp, ICE } = JSON.parse(atob(document.getElementById("webrtc-id-foreign").value));
@@ -399,9 +431,14 @@
     const calculatorLogic = async (e) => {
         e.preventDefault();
         const content = new FormData(e.target).get("formula");
-        for (let p of peers) {
-            p.send(content)
-        }
+        console.log("peers", peers);
+        // Don't allow workers to send data
+        if (!worker) {
+            for (let p of peers) {
+                console.log("Sending ", content);
+                p.send(content);
+            };
+        };
         const formula = interprete(content);
         switch (formula.length) {
             // Dyadic sum: calculate the sum of the two numbers
@@ -425,6 +462,8 @@
     const initialize = () => {
         // Start a WebRTC connection with STUN servers
         initializeConnection();
+        // ASD
+        document.getElementById('peers').onclick = logPeers;
         // Host a WebRTC connection
         document.getElementById('host').onclick = host;
         // Host a WebRTC connection
