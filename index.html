@@ -141,7 +141,6 @@
     };
     let connection;
     var peers = new Array();
-    const logPeers = () => console.log(peers);
     let worker = false;
     const handleMessage = async e => {
         domlog("REQ peer (" + e.target.id + "@" + e.target.label + "): " + e.data);
@@ -156,9 +155,6 @@
         };
         setResult(e.data);
     };
-    const showOwnID = (ID) => {
-        document.getElementById("webrtc-id").value = ID;
-    }
     const showState = () => {
         console.log("-----State change-------");
         console.log("signalingState", connection.signalingState);
@@ -179,32 +175,25 @@
             event.channel.onmessage = handleMessage;
             worker = true;
         };
-    };
-    const host = async (event) => {
-        // Create ICE candidate
+        // Createa a local offer to be shared with ICE candidate
         connection.onicecandidate = event => {
             if (event.candidate) {
-                connection.yolocandidate = JSON.parse(JSON.stringify(event.candidate));
                 const offer = connection.localDescription;
-                const hostOffer = { type: offer.type, sdp: offer.sdp };
-                const hostID = {
-                    ICE: connection.yolocandidate,
-                    sdp: hostOffer,
-                };
-                // Store the offer to HTML DOM
-                showOwnID(btoa(JSON.stringify(hostID)));
+                // Store the offer and ice candidate to HTML DOM
+                document.getElementById("webrtc-id").value = btoa(JSON.stringify({
+                    ICE: JSON.parse(JSON.stringify(event.candidate)), // JS deep copy idiom
+                    sdp: { type: offer.type, sdp: offer.sdp },
+                }));
             }
         };
-        // Create a local offer to be shared
-        const channel = connection.createDataChannel("laskin.live");
+    };
+    const host = async (event) => {
         // Open host data channel
+        const channel = connection.createDataChannel("laskin.live");
         channel.onmessage = handleMessage;
-        channel.onopen = event => {
-            peers.push(event.currentTarget);
-        };
-        const offer = await connection.createOffer();
+        channel.onopen = event => peers.push(event.currentTarget);
+        const offer = await connection.createOffer(); // calls onicecandidate event
         await connection.setLocalDescription(offer);
-
     };
     const allow = async (event) => {
         const { ICE, sdp } = JSON.parse(atob(document.getElementById("webrtc-allow").value));
@@ -212,24 +201,10 @@
         await connection.addIceCandidate(ICE);
     };
     const join = async (event) => {
-        // Create ICE candidate
-        connection.onicecandidate = event => {
-            if (event.candidate) {
-                connection.yolocandidate = JSON.parse(JSON.stringify(event.candidate));
-                const offer = connection.localDescription;
-                const joinOffer = { type: offer.type, sdp: offer.sdp };
-                const joinID = {
-                    ICE: connection.yolocandidate,
-                    sdp: joinOffer,
-                };
-                // Store the offer to HTML DOM
-                showOwnID(btoa(JSON.stringify(joinID)));
-            }
-        };
         // Start hosting a connection
-        const { sdp, ICE } = JSON.parse(atob(document.getElementById("webrtc-id-foreign").value));
+        const { ICE, sdp } = JSON.parse(atob(document.getElementById("webrtc-id-foreign").value));
         await connection.setRemoteDescription(sdp);
-        const answer = await connection.createAnswer();
+        const answer = await connection.createAnswer(); // calls onicecandidate event
         await connection.setLocalDescription(answer);
         document.getElementById("webrtc-id").value = btoa(JSON.stringify({ type: answer.type, sdp: answer.sdp }));
         await connection.addIceCandidate(ICE);
@@ -417,8 +392,6 @@
     const initialize = () => {
         // Start a WebRTC connection with STUN servers
         initializeConnection();
-        // Log peers if needed
-        // document.getElementById('peers').onclick = logPeers;
         // Host a WebRTC connection
         document.getElementById('host').onclick = host;
         // Host a WebRTC connection
