@@ -206,7 +206,6 @@
         await connection.setRemoteDescription(sdp);
         const answer = await connection.createAnswer(); // calls onicecandidate event
         await connection.setLocalDescription(answer);
-        document.getElementById("webrtc-id").value = btoa(JSON.stringify({ type: answer.type, sdp: answer.sdp }));
         await connection.addIceCandidate(ICE);
     };
     // **********
@@ -406,4 +405,5 @@
     };
     window.onload = initialize;
 </script>
+
 </html>
