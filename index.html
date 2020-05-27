@@ -332,7 +332,7 @@
     };
 
     // Initialize DOM<>JS<>WEBRTC<>GPU interactions
-    const initialize = () => {
+    window.onload = () => {
         // Start a WebRTC connection with STUN servers
         initializeConnection();
         // Host a WebRTC connection
@@ -347,7 +347,6 @@
         // Submitting calculates the formula on the GPU and displays the result/error
         document.getElementById("calculator").onsubmit = calculatorLogic;
     };
-    window.onload = initialize;
 </script>
 
 </html>
