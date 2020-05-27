@@ -11,7 +11,7 @@
             font-family: "Inter", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
         }
 
-        #layout {
+        body {
             display: grid;
             justify-items: center;
             gap: 2rem;
@@ -20,32 +20,17 @@
 
         #pooling {
             display: grid;
-            gap: 0;
+            grid-template-rows: repeat(4, 1fr);
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.5em;
         }
 
         #pooling label {
             text-align: right;
         }
 
-        .tricolumn {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            justify-content: center;
-            align-content: center;
-            gap: 0.5em;
-        }
-
-        .tricolumn p {
-            padding: 0;
-            margin: 0;
-        }
-
         #calculator {
             border: 2px solid black;
-        }
-
-        #formula {
-            outline: none;
         }
 
         #result {
@@ -78,56 +63,41 @@
 </head>
 
 <body>
-    <div id="layout">
-        <h1>&#128169;laskin.live</h1>
-        <div id="pooling">
-            <div id="pool-status" class="tricolumn">
-                <label for="status" class="status">Status:</label>
-                <span id="status">disconnected</span>
-                <p id="emoji" />
-            </div>
-            <div id="pool-self" class="tricolumn">
-                <label for="webrtc-id">Your ID: </label>
-                <input class="limited" id="webrtc-id"></input>
-                <button type="button" id="host">Host</button>
-            </div>
-            <div id="pool-self" class="tricolumn">
-                <label for="webrtc-id">Allow ID: </label>
-                <input class="limited" id="webrtc-allow"></input>
-                <button type="button" id="allow">Allow</button>
-            </div>
-            <div id="pool-friend" class="tricolumn">
-                <label for="webrtc-id-foreign">Their ID:</label>
-                <input class="limited" placeholder="your friend's id here" id="webrtc-id-foreign"></input>
-                <button type="button" id="join">Join</button>
-            </div>
-        </div>
-        <div id="form">
-            <form id="calculator" class="limited" method="POST" enctype="multipart/form-data" onsubmit="return false;">
-                <div id="display">
-                    <input autofocus autocomplete="off" id="formula" name="formula" pattern="[0-9a\+\s]*" minlength=3
-                        required>
-                    <h2 id="result"></h2>
-                </div>
-                <div id="buttons">
-                    <input type="button" value="7">
-                    <input type="button" value="8">
-                    <input type="button" value="9">
-                    <input type="button" value="4">
-                    <input type="button" value="5">
-                    <input type="button" value="6">
-                    <input type="button" value="1">
-                    <input type="button" value="2">
-                    <input type="button" value="3">
-                    <input type="button" value="0">
-                    <input type="button" value="+">
-                    <input type="submit" value="=">
-                </div>
-            </form>
-        </div>
-        <p id="error"></p>
-        <div id="stdout"></div>
+    <h1>&#128169;laskin.live</h1>
+    <div id="pooling">
+        <label for="status">Status:</label>
+        <span id="status">disconnected</span>
+        <span></span>
+        <label for="webrtc-id">Your ID:</label>
+        <input autocomplete="off" id="webrtc-id"></input>
+        <button type="button" id="host">Host</button>
+        <label for="webrtc-id">Allow ID:</label>
+        <input autocomplete="off" id="webrtc-allow"></input>
+        <button type="button" id="allow">Allow</button>
+        <label for="webrtc-id-foreign">Their ID:</label>
+        <input autocomplete="off" placeholder="your friend's id here" id="webrtc-id-foreign"></input>
+        <button type="button" id="join">Join</button>
     </div>
+    <form id="calculator" method="POST" enctype="multipart/form-data" onsubmit="return false;">
+        <input autofocus autocomplete="off" id="formula" name="formula" pattern="[0-9a\+\s]*" minlength=3 required>
+        <h2 id="result"></h2>
+        <div id="buttons">
+            <input type="button" value="7">
+            <input type="button" value="8">
+            <input type="button" value="9">
+            <input type="button" value="4">
+            <input type="button" value="5">
+            <input type="button" value="6">
+            <input type="button" value="1">
+            <input type="button" value="2">
+            <input type="button" value="3">
+            <input type="button" value="0">
+            <input type="button" value="+">
+            <input type="submit" value="=">
+        </div>
+    </form>
+    <p id="error"></p>
+    <div id="stdout"></div>
 </body>
 <script type="module">
     // **********
