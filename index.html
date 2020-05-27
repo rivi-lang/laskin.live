@@ -105,7 +105,6 @@
         const content = new FormData(e.target)
         switch (e.submitter.value) {
         case "Host":
-            console.log("host")
             await initializeConnection(e.target.querySelector("[name='webrtc-id']"))
             await host();
             e.submitter.disabled = true
@@ -113,13 +112,11 @@
             e.target.querySelector("[name='webrtc-id-foreign']").required = true
             break;
         case "Allow":
-            console.log("allow")
-            await join(content.get("webrtc-id-foreign"))
+            await allow(content.get("webrtc-id-foreign"))
             e.submitter.disabled = true
             e.target.querySelector("[name='webrtc-id-foreign']").disabled = true
             break;
         default: // default to Join
-            console.log("join")
             await initializeConnection(e.target.querySelector("[name='webrtc-id']"))
             await join(content.get("webrtc-id-foreign"))
             e.target.querySelector("[value='Host']").disabled = true
