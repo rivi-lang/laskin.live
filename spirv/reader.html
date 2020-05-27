@@ -1,0 +1,24 @@
+<html>
+    <body>
+        <input type="file">
+        <button id="btn">Submit</button>
+    </body>
+    <script>
+
+        const fileInput = document.querySelector('input[type="file"]');
+        const btn = document.getElementById('btn');
+        const reader = new FileReader();
+
+        btn.addEventListener("click", read);
+
+        function read(callback) {
+          var file = fileInput.files.item(0);
+          reader.readAsArrayBuffer(file);
+        }
+
+        reader.onload = function() {
+           console.log(reader.result)
+           console.log("store the Int32Array variable, and run toString() method on it, paste result to index.html")
+        }
+    </script>
+</html>

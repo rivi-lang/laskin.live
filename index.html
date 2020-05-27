@@ -98,7 +98,7 @@
     <p id="error"></p>
     <div id="stdout"></div>
 </body>
-<script type="module">
+<script>
 
     const poolingLogic = async (e) => {
         e.preventDefault();
@@ -205,31 +205,15 @@
     // CALCULATOR
     // **********
 
-    // Import glslang to compile kernels into bytecode
-    import glslangModule from 'https://unpkg.com/@webgpu/glslang@0.0.15/dist/web-devel-onefile/glslang.js';
-
     // GPU-runnable kernels for each operand
+    // See https://github.com/Laged/laskin.live for the code behind these
     const kernels = {
-        "+":
-            `#version 450
-        layout(std430, set = 0, binding = 0) buffer LeftBuffer {
-            float numbers[];
-        } lhs;
-
-        layout(std430, set = 0, binding = 1) buffer RightBuffer {
-            float numbers[];
-        } rhs;
-
-        void main() {
-            uint index = gl_GlobalInvocationID.x;
-            lhs.numbers[index] += rhs.numbers[index];
-        }`
+        "+": Uint32Array.from([119734787,66304,458752,36,0,131089,1,393227,1,1280527431,1685353262,808793134,0,196622,0,1,393231,5,2,1852399981,0,3,393232,2,17,1,1,1,196611,2,450,262149,2,1852399981,0,262149,4,1701080681,120,524293,3,1197436007,1633841004,1986939244,1952539503,1231974249,68,327685,5,1952867660,1717990722,29285,327686,5,0,1651340654,7565925,196613,6,7563372,327685,7,1751607634,1718960756,7497062,327686,7,0,1651340654,7565925,196613,8,7563378,262215,3,11,28,262215,9,6,4,327752,5,0,35,0,196679,5,3,262215,6,34,0,262215,6,33,0,262215,10,6,4,327752,7,0,35,0,196679,7,3,262215,8,34,0,262215,8,33,1,131091,11,196641,12,11,262165,13,32,0,262176,14,7,13,262167,15,13,3,262176,16,1,15,262203,16,3,1,262187,13,17,0,262176,18,1,13,196630,19,32,196637,9,19,196638,5,9,262176,20,2,5,262203,20,6,2,262165,21,32,1,262187,21,22,0,196637,10,19,196638,7,10,262176,23,2,7,262203,23,8,2,262176,24,2,19,327734,11,2,0,12,131320,25,262203,14,4,7,327745,18,26,3,17,262205,13,27,26,196670,4,27,262205,13,28,4,262205,13,29,4,393281,24,30,8,22,29,262205,19,31,30,393281,24,32,6,22,28,262205,19,33,32,327809,19,34,33,31,393281,24,35,6,22,28,196670,35,34,65789,65592]),
     };
 
     // Run a kernel on the GPU with the given arguments
     const run = async (kernel, args) => {
         // Initialize WebGPU
-        const glslang = await glslangModule();
         const adapter = await navigator.gpu.requestAdapter();
         const device = await adapter.requestDevice();
         // Initialize GPU buffers through typed arrays from arguments
@@ -252,7 +236,7 @@
             layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
             computeStage: {
                 module: device.createShaderModule({
-                    code: glslang.compileGLSL(kernel, "compute")
+                    code: kernel,
                 }),
                 entryPoint: "main",
             }

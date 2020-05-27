@@ -1,0 +1,14 @@
+#version 450
+
+layout(std430, set = 0, binding = 0) buffer LeftBuffer {
+    float numbers[];
+} lhs;
+
+layout(std430, set = 0, binding = 1) buffer RightBuffer {
+    float numbers[];
+} rhs;
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    lhs.numbers[index] += rhs.numbers[index];
+}
