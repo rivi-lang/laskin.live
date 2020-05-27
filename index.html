@@ -240,54 +240,23 @@
         const adapter = await navigator.gpu.requestAdapter();
         const device = await adapter.requestDevice();
         // Initialize GPU buffers through typed arrays from arguments
-        const lhs = new Float32Array(args[0]);
-        const rhs = new Float32Array(args[1]);
-        const [lhsBuffer, lhsAllocation] = device.createBufferMapped({
-            size: lhs.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+        var l = [];
+        var ls = [];
+        args.forEach((v, i) => {
+            const a = new Float32Array(v);
+            const [buf, loc] = device.createBufferMapped({
+                size: a.byteLength,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+            });
+            new Float32Array(loc).set(a);
+            buf.unmap();
+            l.push({binding:i, visibility:GPUShaderStage.COMPUTE, type:"storage-buffer"});
+            ls.push({binding:i, resource:{ buffer:buf }});
         });
-        new Float32Array(lhsAllocation).set(lhs);
-        lhsBuffer.unmap();
-        const [rhsBuffer, rhsAllocation] = device.createBufferMapped({
-            size: rhs.byteLength,
-            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-        });
-        new Float32Array(rhsAllocation).set(rhs);
-        rhsBuffer.unmap();
-        const deviceBuffer = device.createBuffer({
-            size: lhs.byteLength,
-            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-        });
-        // Create a compute pipeline with bind groups
-        const bindGroupLayout = device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.COMPUTE,
-                    type: "storage-buffer",
-                },
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.COMPUTE,
-                    type: "storage-buffer",
-                },
-            ],
-        });
-        const bindGroup = device.createBindGroup({
-            layout: bindGroupLayout,
-            entries: [
-                {
-                    binding: 0,
-                    resource: { buffer: lhsBuffer },
-                },
-                {
-                    binding: 1,
-                    resource: { buffer: rhsBuffer },
-                },
-            ],
-        });
+        const layout = device.createBindGroupLayout({entries: l});
+        const bindGroup = device.createBindGroup({layout: layout, entries: ls});
         const computePipeline = device.createComputePipeline({
-            layout: device.createPipelineLayout({ bindGroupLayouts: [bindGroupLayout] }),
+            layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
             computeStage: {
                 module: device.createShaderModule({
                     code: glslang.compileGLSL(kernel, "compute")
@@ -295,6 +264,7 @@
                 entryPoint: "main",
             }
         });
+        const lhs = new Float32Array(args[0]);
         // Create a command encoder and run a compute pass to get a result
         const commandPool = device.createCommandEncoder();
         const commandBuffer = commandPool.beginComputePass();
@@ -302,7 +272,11 @@
         commandBuffer.setBindGroup(0, bindGroup);
         commandBuffer.dispatch(lhs.length, 1, 1);
         commandBuffer.endPass();
-        commandPool.copyBufferToBuffer(lhsBuffer, 0, deviceBuffer, 0, lhs.byteLength);
+        const deviceBuffer = device.createBuffer({
+            size: lhs.byteLength,
+            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+        });
+        commandPool.copyBufferToBuffer(ls[0].resource.buffer, 0, deviceBuffer, 0, lhs.byteLength);
         device.defaultQueue.submit([commandPool.finish()]);
         // Read result from GPU memoery
         return new Float32Array(await deviceBuffer.mapReadAsync());
