@@ -64,22 +64,25 @@
 
 <body>
     <h1>&#128169;laskin.live</h1>
-    <div id="pooling">
+    <form id="pooling" onsubmit="return false;">
         <label for="status">Status:</label>
         <span id="status">disconnected</span>
         <span></span>
+
         <label for="webrtc-id">Your ID:</label>
-        <input autocomplete="off" id="webrtc-id"></input>
-        <button type="button" id="host">Host</button>
+        <input autocomplete="off" disabled name="webrtc-id">
+        <input type="submit" value="Host">
+
         <label for="webrtc-id">Allow ID:</label>
-        <input autocomplete="off" id="webrtc-allow"></input>
-        <button type="button" id="allow">Allow</button>
+        <input autocomplete="off" disabled name="webrtc-allow">
+        <input type="submit" disabled value="Allow">
+
         <label for="webrtc-id-foreign">Their ID:</label>
-        <input autocomplete="off" placeholder="your friend's id here" id="webrtc-id-foreign"></input>
-        <button type="button" id="join">Join</button>
-    </div>
+        <input autocomplete="off" placeholder="your friend's id here" name="webrtc-id-foreign">
+        <input type="submit" value="Join">
+    </form>
     <form id="calculator" method="POST" enctype="multipart/form-data" onsubmit="return false;">
-        <input autofocus autocomplete="off" id="formula" name="formula" pattern="[0-9a\+\s]*" minlength=3 required>
+        <input autocomplete="off" id="formula" name="formula" pattern="[0-9a\+\s]*" minlength=3 required>
         <h2 id="result"></h2>
         <div id="buttons">
             <input type="button" value="7">
@@ -100,6 +103,34 @@
     <div id="stdout"></div>
 </body>
 <script type="module">
+
+    const poolingLogic = async (e) => {
+        e.preventDefault();
+        const content = new FormData(e.target)
+        switch (e.submitter.value) {
+        case "Host":
+            console.log("host")
+            await initializeConnection(e.target.querySelector("[name='webrtc-id']"))
+            e.submitter.disabled = true
+            e.target.querySelector("[name='webrtc-id-foreign']").disabled = true
+            e.target.querySelector("[value='Join']").disabled = true
+            e.target.querySelector("[name='webrtc-allow']").disabled = false
+            e.target.querySelector("[name='webrtc-allow']").required = true
+            e.target.querySelector("[value='Allow']").disabled = false
+            await host();
+            break;
+        case "Allow":
+            console.log("allow")
+            await join(content.get("webrtc-allow"))
+            break;
+        default: // default to Join
+            console.log("join")
+            await initializeConnection(e.target.querySelector("[name='webrtc-id']"))
+            await join(content.get("webrtc-id-foreign"))
+        }
+        return false
+    }
+
     // **********
     // CONNECTION
     // **********
@@ -132,7 +163,7 @@
         console.log("------------------------");
         document.getElementById("status").innerHTML = connection.connectionState;
     };
-    const initializeConnection = async () => {
+    const initializeConnection = async (target) => {
         // Connect to STUN servers and enable logging
         connection = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -150,14 +181,14 @@
             if (event.candidate) {
                 const offer = connection.localDescription;
                 // Store the offer and ice candidate to HTML DOM
-                document.getElementById("webrtc-id").value = btoa(JSON.stringify({
+                target.value = btoa(JSON.stringify({
                     ICE: JSON.parse(JSON.stringify(event.candidate)), // JS deep copy idiom
                     sdp: { type: offer.type, sdp: offer.sdp },
                 }));
             }
         };
     };
-    const host = async (event) => {
+    const host = async () => {
         // Open host data channel
         const channel = connection.createDataChannel("laskin.live");
         channel.onmessage = handleMessage;
@@ -165,14 +196,13 @@
         const offer = await connection.createOffer(); // calls onicecandidate event
         await connection.setLocalDescription(offer);
     };
-    const allow = async (event) => {
-        const { ICE, sdp } = JSON.parse(atob(document.getElementById("webrtc-allow").value));
+    const allow = async (id) => {
+        const { ICE, sdp } = JSON.parse(atob(id));
         await connection.setRemoteDescription(sdp);
         await connection.addIceCandidate(ICE);
     };
-    const join = async (event) => {
-        // Start hosting a connection
-        const { ICE, sdp } = JSON.parse(atob(document.getElementById("webrtc-id-foreign").value));
+    const join = async (id) => {
+        const { ICE, sdp } = JSON.parse(atob(id));
         await connection.setRemoteDescription(sdp);
         const answer = await connection.createAnswer(); // calls onicecandidate event
         await connection.setLocalDescription(answer);
@@ -333,19 +363,12 @@
 
     // Initialize DOM<>JS<>WEBRTC<>GPU interactions
     window.onload = () => {
-        // Start a WebRTC connection with STUN servers
-        initializeConnection();
-        // Host a WebRTC connection
-        document.getElementById('host').onclick = host;
-        // Host a WebRTC connection
-        document.getElementById('allow').onclick = allow;
-        // Join to a WebRTC connection
-        document.getElementById('join').onclick = join;
         // Buttons append elements to the formula
         const push = (elem) => document.getElementById("formula").value += elem.target.value;
         document.querySelectorAll("#calculator input[type=button]").forEach(elem => elem.onclick = push);
         // Submitting calculates the formula on the GPU and displays the result/error
         document.getElementById("calculator").onsubmit = calculatorLogic;
+        document.getElementById("pooling").onsubmit = poolingLogic;
     };
 </script>
 
