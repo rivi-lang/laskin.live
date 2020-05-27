@@ -73,10 +73,6 @@
         <input autocomplete="off" disabled name="webrtc-id">
         <input type="submit" value="Host">
 
-        <label for="webrtc-id">Allow ID:</label>
-        <input autocomplete="off" disabled name="webrtc-allow">
-        <input type="submit" disabled value="Allow">
-
         <label for="webrtc-id-foreign">Their ID:</label>
         <input autocomplete="off" placeholder="your friend's id here" name="webrtc-id-foreign">
         <input type="submit" value="Join">
@@ -111,22 +107,22 @@
         case "Host":
             console.log("host")
             await initializeConnection(e.target.querySelector("[name='webrtc-id']"))
-            e.submitter.disabled = true
-            e.target.querySelector("[name='webrtc-id-foreign']").disabled = true
-            e.target.querySelector("[value='Join']").disabled = true
-            e.target.querySelector("[name='webrtc-allow']").disabled = false
-            e.target.querySelector("[name='webrtc-allow']").required = true
-            e.target.querySelector("[value='Allow']").disabled = false
             await host();
+            e.submitter.disabled = true
+            e.target.querySelector("[value='Join']").value = "Allow"
+            e.target.querySelector("[name='webrtc-id-foreign']").required = true
             break;
         case "Allow":
             console.log("allow")
-            await join(content.get("webrtc-allow"))
+            await join(content.get("webrtc-id-foreign"))
+            e.submitter.disabled = true
+            e.target.querySelector("[name='webrtc-id-foreign']").disabled = true
             break;
         default: // default to Join
             console.log("join")
             await initializeConnection(e.target.querySelector("[name='webrtc-id']"))
             await join(content.get("webrtc-id-foreign"))
+            e.target.querySelector("[value='Host']").disabled = true
         }
         return false
     }
