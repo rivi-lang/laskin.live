@@ -213,46 +213,44 @@
         const adapter = await navigator.gpu.requestAdapter();
         const device = await adapter.requestDevice();
         // Initialize GPU buffers through typed arrays from arguments
-        var l = [];
-        var ls = [];
-        args.forEach((v, i) => {
-            const a = new Float32Array(v);
+        const buffers = args.map(v => {
+            const arg = new Float32Array(v);
             const [buf, loc] = device.createBufferMapped({
-                size: a.byteLength,
+                size: arg.byteLength,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
             });
-            new Float32Array(loc).set(a);
+            new Float32Array(loc).set(arg);
             buf.unmap();
-            l.push({binding:i, visibility:GPUShaderStage.COMPUTE, type:"storage-buffer"});
-            ls.push({binding:i, resource:{ buffer:buf }});
+            return {buf, arg};
         });
-        const layout = device.createBindGroupLayout({entries: l});
-        const bindGroup = device.createBindGroup({layout: layout, entries: ls});
-        const computePipeline = device.createComputePipeline({
+        // Bindings apply a "type" to each buffer, here, binding.
+        const bindings = buffers.map((_, i) => ({binding:i, visibility:GPUShaderStage.COMPUTE, type:"storage-buffer"}));
+        // Descriptor sets apply the "data"
+        const descriptorSets = buffers.map((v, i) => ({binding:i, resource:{ buffer:v.buf }}));
+        const layout = device.createBindGroupLayout({entries: bindings});
+        const bindGroup = device.createBindGroup({layout: layout, entries: descriptorSets});
+        const pipeline = device.createComputePipeline({
             layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
             computeStage: {
-                module: device.createShaderModule({
-                    code: kernel,
-                }),
+                module: device.createShaderModule({code: kernel}),
                 entryPoint: "main",
             }
         });
-        const lhs = new Float32Array(args[0]);
-        // Create a command encoder and run a compute pass to get a result
-        const commandPool = device.createCommandEncoder();
-        const commandBuffer = commandPool.beginComputePass();
-        commandBuffer.setPipeline(computePipeline);
+        const enc = device.createCommandEncoder();
+        const commandBuffer = enc.beginComputePass();
+        commandBuffer.setPipeline(pipeline);
         commandBuffer.setBindGroup(0, bindGroup);
-        commandBuffer.dispatch(lhs.length, 1, 1);
+        commandBuffer.dispatch(buffers[0].arg.length, 1, 1);
         commandBuffer.endPass();
-        const deviceBuffer = device.createBuffer({
-            size: lhs.byteLength,
+        // WebGPU insists that a separate buffer reads the result:
+        // A buffer cannot have COPY_SRC + MAP_READ bitflag.
+        const omegaBuffer = device.createBuffer({
+            size: buffers[0].arg.byteLength,
             usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
         });
-        commandPool.copyBufferToBuffer(ls[0].resource.buffer, 0, deviceBuffer, 0, lhs.byteLength);
-        device.defaultQueue.submit([commandPool.finish()]);
-        // Read result from GPU memoery
-        return new Float32Array(await deviceBuffer.mapReadAsync());
+        enc.copyBufferToBuffer(buffers[0].buf, 0, omegaBuffer, 0, buffers[0].arg.byteLength);
+        device.defaultQueue.submit([enc.finish()]);
+        return new Float32Array(await omegaBuffer.mapReadAsync());
     };
 
     // Evaluate a formula to be runnable on the GPU
@@ -267,8 +265,7 @@
             return;
         }
         // TODO add support for other operands
-        const result = await run(kernels["+"], formula);
-        return result;
+        return await run(kernels["+"], formula);
     }
 
     const push = (elem) => document.getElementById("formula").value += elem.target.value;
@@ -328,9 +325,8 @@
                 setResult(formula);
                 break;
             // Missing/invalid arguments: show an error
-            case 0:
+            default:
                 setError("Invalid/missing arguments");
-                break;
         };
     };
 </script>
