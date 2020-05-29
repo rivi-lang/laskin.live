@@ -133,32 +133,30 @@
     var peers = new Array();
     let worker = false;
     const handleMessage = async e => {
-        domlog("REQ peer (" + e.target.id + "@" + e.target.label + "): " + e.data);
+        domlog(`REQ peer (${e.target.id}@${e.target.label}): ${e.data}`);
         if (worker) {
             const formula = interprete(e.data);
             const res = await gpuEval(formula);
-            domlog("RES peer (" + e.target.id + "@" + e.target.label + "): " + res);
-            for (let p of peers) {
-                p.send(res.join(" "));
-            };
+            domlog(`RES peer (${e.target.id}@${e.target.label}): ${res}`);
+            peers.forEach(p => p.send(res.join(" ")));
             return;
         };
         setResult(e.data);
     };
-    const showState = () => {
+    const showState = (event) => {
         console.log("-----State change-------");
-        console.log("signalingState", connection.signalingState);
-        console.log("connectionState", connection.connectionState);
+        console.log("signalingState", event.target.signalingState);
+        console.log("connectionState", event.target.connectionState);
         console.log("------------------------");
-        document.getElementById("status").innerHTML = connection.connectionState;
+        document.getElementById("status").innerHTML = event.target.connectionState;
     };
     const initializeConnection = async (target) => {
         // Connect to STUN servers and enable logging
         connection = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
         });
-        connection.onconnectionstatechange = showState;
-        connection.onsignalingstatechange = showState;
+        connection.onconnectionstatechange = event => showState(event);
+        connection.onsignalingstatechange = event => showState(event);
         // Open client data channel
         connection.ondatachannel = event => {
             peers.push(event.channel);
@@ -268,7 +266,7 @@
         return await run(kernels["+"], formula);
     }
 
-    const push = (elem) => document.getElementById("formula").value += elem.target.value;
+    const push = (elem) => document.querySelector("[name='formula']").value += elem.target.value;
 
     // Interprete a text to a formula acceptably by the GPU calculator
     const interprete = (text) => {
@@ -308,11 +306,7 @@
     const calculatorLogic = async (e) => {
         const content = new FormData(e.target).get("formula");
         // Don't allow workers to send data
-        if (!worker) {
-            for (let p of peers) {
-                p.send(content);
-            };
-        };
+        if (!worker) { peers.forEach(p => p.send(content))};
         const formula = interprete(content);
         switch (formula.length) {
             // Dyadic sum: calculate the sum of the two numbers
