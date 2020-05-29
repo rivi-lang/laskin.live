@@ -47,11 +47,6 @@
 
         }
 
-        #error {
-            color: red;
-            text-align: center;
-        }
-
         #stdout {
             background-color: black;
             color: white;
@@ -76,7 +71,8 @@
         <input type="submit" value="Join">
     </form>
     <form id="calculator" onsubmit="calculatorLogic(event); return false">
-        <input autocomplete="off" id="formula" name="formula" pattern="[0-9a\+\s]*" minlength=3 required>
+        <!-- onchange event clears custom errors to allow the form to be resubmitted -->
+        <input autocomplete="off" name="formula" pattern="[0-9a\+\s]*" minlength=3 required onchange="setError(this, '')">
         <h2 id="result"></h2>
         <div id="buttons">
             <input type="button" value="7" onclick="push(event)">
@@ -93,7 +89,6 @@
             <input type="submit" value="=">
         </div>
     </form>
-    <p id="error"></p>
     <div id="stdout"></div>
 </body>
 <script>
@@ -296,11 +291,11 @@
     }
 
     // Display errors or results in DOM
-    const setError = (error) => document.getElementById("error").innerHTML = error;
-    const setResult = (result) => {
-        document.getElementById("result").innerHTML = result;
-        setError("");
-    };
+    const setError = (elem, err) => {
+        elem.setCustomValidity(err);
+        elem.reportValidity();
+    }
+    const setResult = result => document.getElementById("result").innerHTML = result;
 
     // Handle the calculator logic from the HTML form
     const calculatorLogic = async (e) => {
@@ -320,7 +315,7 @@
                 break;
             // Missing/invalid arguments: show an error
             default:
-                setError("Invalid/missing arguments");
+                setError(e.target.querySelector("[name='formula']"), "Invalid/missing arguments");
         };
     };
 </script>
