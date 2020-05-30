@@ -5,91 +5,81 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>&#128169;</text></svg>">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        * {
-            box-sizing: border-box;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-        }
-
         body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
             display: grid;
             justify-items: center;
             gap: 2rem;
-            min-width: 10em;
         }
 
         #pooling {
             display: grid;
-            grid-template-rows: repeat(3, 1fr);
-            grid-template-columns: repeat(3, 1fr);
-            gap: 0.5em;
+            grid-template-rows: repeat(2, 1fr);
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0 0.5em;
+            margin: .5em 0 1em 0;
         }
 
-        #pooling label {
-            text-align: right;
-        }
-
-        #calculator {
-            border: 2px solid black;
+        #calculator, #stdout {
+            display: flex;
+            flex-direction: column;
         }
 
         #result {
-            padding: 0.5em;
-            min-height: 4rem;
-            line-height: 2rem;
-            border-bottom: 1px solid black;
-            margin: 0;
+            padding: 0.5em 0 0.5em 0;
         }
 
         #buttons {
             display: grid;
             grid-template-rows: repeat(4, 1fr);
             grid-template-columns: repeat(3, 1fr);
-
         }
 
         #stdout {
-            background-color: black;
-            color: white;
-            max-height: 50vh;
+            max-height: 10em;
             overflow-y: scroll;
         }
     </style>
 </head>
 <body>
     <h1>&#128169;laskin.live</h1>
-    <form id="pooling" onsubmit="poolingLogic(event); return false">
-        <label for="status">Status:</label>
-        <span id="status">disconnected</span>
-        <span></span>
-
-        <label for="webrtc-id">Your ID:</label>
-        <input autocomplete="off" disabled name="webrtc-id">
-        <input type="submit" value="Host">
-
-        <label for="webrtc-id-foreign">Their ID:</label>
-        <input autocomplete="off" placeholder="your friend's id here" name="webrtc-id-foreign">
-        <input type="submit" value="Join">
+    <form onsubmit="calculatorLogic(event); return false">
+        <fieldset id="calculator">
+            <legend>WebGPU Calculator</legend>
+            <!-- onchange event clears custom errors to allow the form to be resubmitted -->
+            <input autocomplete="off" name="formula" pattern="[0-9a\+\s]*" minlength=3 required onchange="setError(this, '')">
+            <output id="result">0</output>
+            <div id="buttons">
+                <input type="button" value="7" onclick="push(event)">
+                <input type="button" value="8" onclick="push(event)">
+                <input type="button" value="9" onclick="push(event)">
+                <input type="button" value="4" onclick="push(event)">
+                <input type="button" value="5" onclick="push(event)">
+                <input type="button" value="6" onclick="push(event)">
+                <input type="button" value="1" onclick="push(event)">
+                <input type="button" value="2" onclick="push(event)">
+                <input type="button" value="3" onclick="push(event)">
+                <input type="button" value="0" onclick="push(event)">
+                <input type="button" value="+" onclick="push(event)">
+                <input type="submit" value="=">
+            </div>
+        </fieldset>
     </form>
-    <form id="calculator" onsubmit="calculatorLogic(event); return false">
-        <!-- onchange event clears custom errors to allow the form to be resubmitted -->
-        <input autocomplete="off" name="formula" pattern="[0-9a\+\s]*" minlength=3 required onchange="setError(this, '')">
-        <h2 id="result"></h2>
-        <div id="buttons">
-            <input type="button" value="7" onclick="push(event)">
-            <input type="button" value="8" onclick="push(event)">
-            <input type="button" value="9" onclick="push(event)">
-            <input type="button" value="4" onclick="push(event)">
-            <input type="button" value="5" onclick="push(event)">
-            <input type="button" value="6" onclick="push(event)">
-            <input type="button" value="1" onclick="push(event)">
-            <input type="button" value="2" onclick="push(event)">
-            <input type="button" value="3" onclick="push(event)">
-            <input type="button" value="0" onclick="push(event)">
-            <input type="button" value="+" onclick="push(event)">
-            <input type="submit" value="=">
-        </div>
+    <form onsubmit="poolingLogic(event); return false">
+        <fieldset>
+            <legend>Remote connection [<span id="status">disconnected</span>]</legend>
+            <section id="pooling">
+                <input type="submit" value="Host">
+                <input type="submit" value="Join">
+                <input autocomplete="off" disabled name="webrtc-id">
+                <input autocomplete="off" placeholder="your friend's id here" name="webrtc-id-foreign">
+            </section>
+            <details>
+                <summary>Data channel history</summary>
+                <div id="stdout"></div>
+            </details>
+        </fieldset>
     </form>
-    <div id="stdout"></div>
 </body>
 <script>
 
@@ -120,7 +110,7 @@
     // **********
     const domlog = data => {
         let msg = document.createTextNode(data);
-        let container = document.createElement("p");
+        let container = document.createElement("samp");
         container.appendChild(msg);
         document.getElementById('stdout').prepend(container);
     };
