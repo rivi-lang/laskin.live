@@ -128,16 +128,12 @@
         });
         connection.onconnectionstatechange = event => showState(event);
         connection.onsignalingstatechange = event => showState(event);
-        // Create a local offer to be shared with ICE candidate
-        connection.onicecandidate = event => {
-            if (event.candidate) {
-                // Store to HTML DOM
-                target.value = btoa(JSON.stringify({
-                    ICE: JSON.parse(JSON.stringify(event.candidate)), // JS deep copy idiom
-                    sdp: connection.localDescription,
-                }));
-            }
-        };
+        // Create a local offer to be shared with ICE candidate, may store to DOM
+        connection.onicecandidate = event => target.value = event.candidate ?
+            btoa(JSON.stringify({
+                ICE: JSON.parse(JSON.stringify(event.candidate)), // JS deep copy idiom
+                sdp: connection.localDescription,
+            })) : target.value;
     };
     const host = async () => {
         // Open host data channel
