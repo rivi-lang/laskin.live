@@ -115,15 +115,13 @@
         document.getElementById('stdout').prepend(container);
     };
     let connection;
-    var peers = new Array();
-    let worker = false;
     const handleMessage = async e => {
         domlog(`REQ peer (${e.target.id}@${e.target.label}): ${e.data}`);
-        if (worker) {
+        if (connection.localDescription.type === "offer") {
             const formula = interprete(e.data);
             const res = await gpuEval(formula);
             domlog(`RES peer (${e.target.id}@${e.target.label}): ${res}`);
-            peers.forEach(p => p.send(res.join(" ")));
+            connection.channel.send(res.join(" "));
             return;
         };
         setResult(e.data);
@@ -144,9 +142,8 @@
         connection.onsignalingstatechange = event => showState(event);
         // Open client data channel
         connection.ondatachannel = event => {
-            peers.push(event.channel);
-            event.channel.onmessage = handleMessage;
-            worker = true;
+            connection.channel = event.channel
+            connection.channel.onmessage = handleMessage;
         };
         // Createa a local offer to be shared with ICE candidate
         connection.onicecandidate = event => {
@@ -164,7 +161,7 @@
         // Open host data channel
         const channel = connection.createDataChannel("laskin.live");
         channel.onmessage = handleMessage;
-        channel.onopen = event => peers.push(event.currentTarget);
+        channel.onopen = event => connection.channel = event.currentTarget;
         const offer = await connection.createOffer(); // calls onicecandidate event
         await connection.setLocalDescription(offer);
     };
@@ -291,7 +288,10 @@
     const calculatorLogic = async (e) => {
         const content = new FormData(e.target).get("formula");
         // Don't allow workers to send data
-        if (!worker) { peers.forEach(p => p.send(content))};
+        if (connection.currentLocalDescription.type === "answer") {
+            connection.channel.send(content);
+            return;
+        };
         const formula = interprete(content);
         switch (formula.length) {
             // Dyadic sum: calculate the sum of the two numbers
