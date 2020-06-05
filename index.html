@@ -114,18 +114,6 @@
         container.appendChild(msg);
         document.getElementById('stdout').prepend(container);
     };
-    let connection;
-    const handleMessage = async e => {
-        domlog(`REQ peer (${e.target.id}@${e.target.label}): ${e.data}`);
-        if (connection.localDescription.type === "offer") {
-            const formula = interprete(e.data);
-            const res = await gpuEval(formula);
-            domlog(`RES peer (${e.target.id}@${e.target.label}): ${res}`);
-            connection.channel.send(res.join(" "));
-            return;
-        };
-        setResult(e.data);
-    };
     const showState = (event) => {
         console.log("-----State change-------");
         console.log("signalingState", event.target.signalingState);
@@ -133,26 +121,20 @@
         console.log("------------------------");
         document.getElementById("status").innerHTML = event.target.connectionState;
     };
+    let connection;
     const initializeConnection = async (target) => {
-        // Connect to STUN servers and enable logging
         connection = new RTCPeerConnection({
             iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
         });
         connection.onconnectionstatechange = event => showState(event);
         connection.onsignalingstatechange = event => showState(event);
-        // Open client data channel
-        connection.ondatachannel = event => {
-            connection.channel = event.channel
-            connection.channel.onmessage = handleMessage;
-        };
-        // Createa a local offer to be shared with ICE candidate
+        // Create a local offer to be shared with ICE candidate
         connection.onicecandidate = event => {
             if (event.candidate) {
-                const offer = connection.localDescription;
-                // Store the offer and ice candidate to HTML DOM
+                // Store to HTML DOM
                 target.value = btoa(JSON.stringify({
                     ICE: JSON.parse(JSON.stringify(event.candidate)), // JS deep copy idiom
-                    sdp: { type: offer.type, sdp: offer.sdp },
+                    sdp: connection.localDescription,
                 }));
             }
         };
@@ -160,7 +142,12 @@
     const host = async () => {
         // Open host data channel
         const channel = connection.createDataChannel("laskin.live");
-        channel.onmessage = handleMessage;
+        channel.onmessage = async e => {
+            domlog(`REQ peer (${e.target.id}@${e.target.label}): ${e.data}`);
+            const res = await gpuEval(interprete(e.data));
+            domlog(`RES peer (${e.target.id}@${e.target.label}): ${res}`);
+            connection.channel.send(res.join(" "));
+        };
         channel.onopen = event => connection.channel = event.currentTarget;
         const offer = await connection.createOffer(); // calls onicecandidate event
         await connection.setLocalDescription(offer);
@@ -171,6 +158,14 @@
         await connection.addIceCandidate(ICE);
     };
     const join = async (id) => {
+        // in-band data channel negotiation procedure for client
+        connection.ondatachannel = event => {
+            connection.channel = event.channel
+            connection.channel.onmessage = e => {
+                domlog(`REQ peer (${e.target.id}@${e.target.label}): ${e.data}`);
+                setResult(e.data);
+            };
+        };
         const { ICE, sdp } = JSON.parse(atob(id));
         await connection.setRemoteDescription(sdp);
         const answer = await connection.createAnswer(); // calls onicecandidate event
@@ -288,7 +283,8 @@
     const calculatorLogic = async (e) => {
         const content = new FormData(e.target).get("formula");
         // Don't allow workers to send data
-        if (connection.currentLocalDescription.type === "answer") {
+        // question mark is optional chaining, i.e., a clever try catch
+        if (connection?.currentLocalDescription?.type === "answer") {
             connection.channel.send(content);
             return;
         };
