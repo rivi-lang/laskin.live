@@ -134,7 +134,7 @@
                 domlog(`REQ peer (${e.target.id}@${e.target.label}): ${e.data}`);
                 const res = await gpuEval(interprete(e.data));
                 domlog(`RES peer (${e.target.id}@${e.target.label}): ${res}`);
-                c.channel.send(res.join(" "));
+                e.target.send(res.join(" "));
             };
             channel.onopen = event => c.channel = event.currentTarget;
             const offer = await c.createOffer(); // calls onicecandidate event
@@ -227,8 +227,6 @@
         return dyadic || A0 || N0 ? ["Parse error on gpuEval"] : await run(kernels["+"], formula);
     }
 
-    const push = (elem) => document.querySelector("[name='formula']").value += elem.target.value;
-
     // Interprete a text to a formula acceptably by the GPU calculator
     const interprete = (text) => {
         // Convert all arguments to numbers
@@ -259,6 +257,7 @@
     // Display errors or results in DOM
     const setError = (elem, err) => { elem.setCustomValidity(err); elem.reportValidity() };
     const setResult = result => document.getElementById("result").innerHTML = result;
+    const push = (elem) => document.querySelector("[name='formula']").value += elem.target.value;
 
     // Handle the calculator logic from the HTML form
     const calculatorLogic = async (e) => {
