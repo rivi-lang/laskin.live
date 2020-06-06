@@ -87,20 +87,18 @@
         const content = new FormData(e.target)
         switch (e.submitter.value) {
         case "Host":
-            await initializeConnection(e.target.querySelector("[name='webrtc-id']"))
-            await host();
+            await connection.host();
             e.submitter.disabled = true
             e.target.querySelector("[value='Join']").value = "Allow"
             e.target.querySelector("[name='webrtc-id-foreign']").required = true
             break;
         case "Allow":
-            await allow(content.get("webrtc-id-foreign"))
+            await connection.allow(content.get("webrtc-id-foreign"))
             e.submitter.disabled = true
             e.target.querySelector("[name='webrtc-id-foreign']").disabled = true
             break;
         default: // default to Join
-            await initializeConnection(e.target.querySelector("[name='webrtc-id']"))
-            await join(content.get("webrtc-id-foreign"))
+            await connection.join(content.get("webrtc-id-foreign"))
             e.target.querySelector("[value='Host']").disabled = true
         }
     }
@@ -121,53 +119,50 @@
         console.log("------------------------");
         document.getElementById("status").innerHTML = event.target.connectionState;
     };
-    let connection;
-    const initializeConnection = async (target) => {
-        connection = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-        });
-        connection.onconnectionstatechange = event => showState(event);
-        connection.onsignalingstatechange = event => showState(event);
+    const connection = ((domTarget) => {
+        const c = new RTCPeerConnection({iceServers: [{urls:'stun:stun.l.google.com:19302'}]});
+        c.onconnectionstatechange = event => showState(event);
+        c.onsignalingstatechange = event => showState(event);
         // Create a local offer to be shared with ICE candidate, may store to DOM
-        connection.onicecandidate = event => target.value = event.candidate ?
-            btoa(JSON.stringify({
-                ICE: JSON.parse(JSON.stringify(event.candidate)), // JS deep copy idiom
-                sdp: connection.localDescription,
-            })) : target.value;
-    };
-    const host = async () => {
-        // Open host data channel
-        const channel = connection.createDataChannel("laskin.live");
-        channel.onmessage = async e => {
-            domlog(`REQ peer (${e.target.id}@${e.target.label}): ${e.data}`);
-            const res = await gpuEval(interprete(e.data));
-            domlog(`RES peer (${e.target.id}@${e.target.label}): ${res}`);
-            connection.channel.send(res.join(" "));
-        };
-        channel.onopen = event => connection.channel = event.currentTarget;
-        const offer = await connection.createOffer(); // calls onicecandidate event
-        await connection.setLocalDescription(offer);
-    };
-    const allow = async (id) => {
-        const { ICE, sdp } = JSON.parse(atob(id));
-        await connection.setRemoteDescription(sdp);
-        await connection.addIceCandidate(ICE);
-    };
-    const join = async (id) => {
-        // in-band data channel negotiation procedure for client
-        connection.ondatachannel = event => {
-            connection.channel = event.channel
-            connection.channel.onmessage = e => {
+        c.onicecandidate = event => domTarget.value = event.candidate ?
+            btoa(JSON.stringify({ICE:event.candidate, sdp:c.localDescription})) :
+            domTarget.value;
+        c.host = async () => {
+            // Open host data channel
+            const channel = c.createDataChannel("laskin.live");
+            channel.onmessage = async e => {
                 domlog(`REQ peer (${e.target.id}@${e.target.label}): ${e.data}`);
-                setResult(e.data);
+                const res = await gpuEval(interprete(e.data));
+                domlog(`RES peer (${e.target.id}@${e.target.label}): ${res}`);
+                c.channel.send(res.join(" "));
             };
+            channel.onopen = event => c.channel = event.currentTarget;
+            const offer = await c.createOffer(); // calls onicecandidate event
+            await c.setLocalDescription(offer);
         };
-        const { ICE, sdp } = JSON.parse(atob(id));
-        await connection.setRemoteDescription(sdp);
-        const answer = await connection.createAnswer(); // calls onicecandidate event
-        await connection.setLocalDescription(answer);
-        await connection.addIceCandidate(ICE);
-    };
+        c.allow = async (id) => {
+            const { ICE, sdp } = JSON.parse(atob(id));
+            await c.setRemoteDescription(sdp);
+            await c.addIceCandidate(ICE);
+        };
+        c.join = async (id) => {
+            // in-band data channel negotiation procedure for client
+            c.ondatachannel = event => {
+                c.channel = event.channel
+                c.channel.onmessage = e => {
+                    domlog(`REQ peer (${e.target.id}@${e.target.label}): ${e.data}`);
+                    setResult(e.data);
+                };
+            };
+            const { ICE, sdp } = JSON.parse(atob(id));
+            await c.setRemoteDescription(sdp);
+            const answer = await c.createAnswer(); // calls onicecandidate event
+            await c.setLocalDescription(answer);
+            await c.addIceCandidate(ICE);
+        };
+        return c;
+    })(document.querySelector("[name='webrtc-id']"));
+
     // **********
     // CALCULATOR
     // **********
@@ -270,7 +265,7 @@
         const content = new FormData(e.target).get("formula");
         // Don't allow workers to send data
         // question mark is optional chaining, i.e., a clever try catch
-        if (connection?.currentLocalDescription?.type === "answer") {
+        if (connection.currentLocalDescription?.type === "answer") {
             connection.channel.send(content);
             return;
         };
