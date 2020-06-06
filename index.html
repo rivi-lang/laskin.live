@@ -262,10 +262,7 @@
     }
 
     // Display errors or results in DOM
-    const setError = (elem, err) => {
-        elem.setCustomValidity(err);
-        elem.reportValidity();
-    }
+    const setError = (elem, err) => { elem.setCustomValidity(err); elem.reportValidity() };
     const setResult = result => document.getElementById("result").innerHTML = result;
 
     // Handle the calculator logic from the HTML form
