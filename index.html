@@ -226,17 +226,10 @@
 
     // Evaluate a formula to be runnable on the GPU
     const gpuEval = async (formula) => {
-        // Only allow a formula of exactly two integer-only arrays
-        if (
-            formula.length != 2
-            || formula.some(arg => !Array.isArray(arg))
-            || formula.some(arg => arg.some(val => typeof val !== 'number'))
-        ) {
-            console.log("Parse error on gpuEval");
-            return;
-        }
-        // TODO add support for other operands
-        return await run(kernels["+"], formula);
+        const dyadic = formula.length != 2;
+        const A0 = formula.some(arg => !Array.isArray(arg));
+        const N0 = formula.some(arg => arg.some(val => typeof val !== 'number'));
+        return dyadic || A0 || N0 ? ["Parse error on gpuEval"] : await run(kernels["+"], formula);
     }
 
     const push = (elem) => document.querySelector("[name='formula']").value += elem.target.value;
