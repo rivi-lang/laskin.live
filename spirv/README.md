@@ -1,0 +1,11 @@
+# spirv
+
+In this folder one can find the SPIR-V compute kernels that are inlined on the `index.html` file.
+
+To work with these files, you will need [SPIRV-Tools](https://github.com/KhronosGroup/SPIRV-Tools). The tools do also come with Vulkan installations found from [LunarG](https://vulkan.lunarg.com/).
+
+Once installed, you will have the essential binaries, which are `spirv-as`, `spirv-val`, `spirv-dis`, `spirv-cross`, and `glslangValidator`. Using these commands you can cross-compile files such as the `addition.glsl.comp` to SPIR-V binary file as follows: `glslangValidator -H -o out.spv addition.glsl.comp`.
+
+A curious hacker might also consider to translate the `.spv` files to readable SPIR-V by running `spirv-dis out.spv > out.spvd`. This file could be (tried) to be updated to the latest SPIR-V version as follows: `spirv-as out.spvd --target-env spv1.5`. Mac users, on the other hand, might want to check out the MSL code: `spirv-cross out.spvd --msl --msl-version 020200 --output out.msl`. Or maybe to GLSL ES: `spirv-cross --version 330 --es out.spvd --output out.glsl`.
+
+If one would be to develop SPIR-V binaries manually, or as a part of a larget build process, they would do first run `spirv-as out.spvd --target-env spv1.5` and then `spirv-val out.spv` (not sic, `spirv-as` produces by default to `out.spv`). In most cases, if these commands work, then the SPIR-V file could be compiled to WebGPU compatible JavaScript by opening the `reader.html` and using the file input to select the produced `out.spv`. Once you click submit, this will print to console an array struct, from which the `Int32Array` has to be chosen and formatted to a string (e.g., with the `toString()` method), and then inserted to the `index.html` as a typed array. Yet be aware: producing a SPIR-V file and running it on the WebGPU does not mean it will magically work -- a developer has to be aware of buffers and their bindings for them to be readable during execution. Furthermore, WebGPU, while developer friendly to start with, does not seem to produce a very safe environment to develop applications this way: a wrong memory layout might result in your computer crashing! However, for the curious reader this should be more than enough to dip their toes in GPUs.
